@@ -39,6 +39,10 @@
 #include "spdk/bdev.h"
 #include "spdk/bdev_module.h"
 
+enum my_spdk_bdev_io_type {
+	SPDK_BDEV_IO_TYPE_SEARCH = SPDK_BDEV_NUM_IO_TYPES+1
+};
+
 /**
  * Create new pass through bdev.
  *

@@ -49,6 +49,14 @@
 #include "spdk/bdev_module.h"
 #include "spdk/log.h"
 
+//추가:ㅈ
+//#include "spdk/bdev.h"
+//#include "spdk/event.h"
+//#include "spdk/log.h"
+//#include "spdk/bdev_zone.h"
+
+int alp = 0;
+char buffe[512];
 
 static int vbdev_passthru_init(void);
 static int vbdev_passthru_get_ctx_size(void);
@@ -66,7 +74,6 @@ static struct spdk_bdev_module passthru_if = {
 };
 
 SPDK_BDEV_MODULE_REGISTER(ext_passthru, &passthru_if)
-
 /* List of pt_bdev names and their base bdevs via configuration file.
  * Used so we can parse the conf once at init and use this list in examine().
  */
@@ -84,6 +91,10 @@ struct vbdev_passthru {
 	struct spdk_bdev		pt_bdev;    /* the PT virtual bdev */
 	TAILQ_ENTRY(vbdev_passthru)	link;
 	struct spdk_thread		*thread;    /* thread where base device is opened */
+	//io_channel과 buff 추가
+	struct spdk_io_channel *bdev_io_channel;
+	char *buff;
+	//
 };
 static TAILQ_HEAD(, vbdev_passthru) g_pt_nodes = TAILQ_HEAD_INITIALIZER(g_pt_nodes);
 
@@ -286,6 +297,29 @@ pt_read_get_buf_cb(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io, boo
 	}
 }
 
+static void
+read_complete2(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
+{
+	struct vbdev_passthru *hello_context = cb_arg;
+	if(success){
+		SPDK_NOTICELOG("read complete! read string : %s\n", hello_context->buff+(512*alp));
+	}
+	else{
+		SPDK_ERRLOG("bdev io read error...\n");
+	}
+
+	// 읽어온 데이터에 원하는 문자열이 포함되어 있는지 확인
+	if(strchr(hello_context->buff,*buffe)!=NULL){
+			printf("%s in %s\n",buffe, hello_context->buff+(512*alp));
+	}
+	else{
+		printf("%s  no in %s\n",buffe,hello_context->buff+(512*alp));
+	}
+	//if(alp == 8){
+	//	_pt_complete_io(bdev_io, SPDK_BDEV_IO_STATUS_SUCCESS, cb_arg);
+	//}
+	alp++;
+}
 /* Called when someone above submits IO to this pt vbdev. We're simply passing it on here
  * via SPDK IO calls which in turn allocate another bdev IO and call our cpl callback provided
  * below along with the original bdev_io so that we can complete it once this IO completes.
@@ -296,7 +330,10 @@ vbdev_passthru_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *b
 	struct vbdev_passthru *pt_node = SPDK_CONTAINEROF(bdev_io->bdev, struct vbdev_passthru, pt_bdev);
 	struct pt_io_channel *pt_ch = spdk_io_channel_get_ctx(ch);
 	struct passthru_bdev_io *io_ctx = (struct passthru_bdev_io *)bdev_io->driver_ctx;
-	int rc = 0;
+	int rc = 0, i=0;
+	char buf[512] = "a";
+	char *buf1 = NULL;
+	uint64_t nn = 12, length = 0, buf_align;
 
 	/* Setup a per IO context value; we don't do anything with it in the vbdev other
 	 * than confirm we get the same thing back in the completion callback just to
@@ -306,10 +343,62 @@ vbdev_passthru_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *b
 
 	switch (bdev_io->type) {
 	case SPDK_BDEV_IO_TYPE_READ:
+		printf("read!!path!\n");
 		spdk_bdev_io_get_buf(bdev_io, pt_read_get_buf_cb,
 				     bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen);
 		break;
 	case SPDK_BDEV_IO_TYPE_WRITE:
+		if (bdev_io->u.bdev.md_buf == NULL) {
+			printf("write passthru 1\n");
+			//printf("bdev name, channel:%s,%s\n",bdev_io->bdev->name, spdk_io_channel_get_io_device_name(ch));
+			rc = spdk_bdev_writev_blocks(pt_node->base_desc, pt_ch->base_ch, bdev_io->u.bdev.iovs,
+						     bdev_io->u.bdev.iovcnt, bdev_io->u.bdev.offset_blocks,
+						     bdev_io->u.bdev.num_blocks, _pt_complete_io,
+						     bdev_io);
+		} else {
+			printf("write passthru 2\n");
+			rc = spdk_bdev_writev_blocks_with_md(pt_node->base_desc, pt_ch->base_ch,
+							     bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
+							     bdev_io->u.bdev.md_buf,
+							     bdev_io->u.bdev.offset_blocks,
+							     bdev_io->u.bdev.num_blocks,
+							     _pt_complete_io, bdev_io);
+		}
+		break;
+	case SPDK_BDEV_IO_TYPE_SEARCH:
+		/* 제대로 값이 들어있는지 확인 */
+		printf("buffer:%s\n",bdev_io->u.bdev.iovs[0].iov_base);	
+		printf("here! SEARCH!!\n");
+		printf("offset_block, num_block :%u %u\n",bdev_io->u.bdev.offset_blocks, bdev_io->u.bdev.num_blocks);
+		length = 512;
+
+		memcpy(buf,bdev_io->u.bdev.iovs[0].iov_base,512);
+		/*read complete1에서 비교할 문자열 buffe에 받기*/
+		memcpy(buffe,bdev_io->u.bdev.iovs[0].iov_base,512);
+		printf("get buffe:%s\n",buffe);
+		
+		/* read에 사용할 buffer 초기화 */
+		buf_align = spdk_bdev_get_buf_align(pt_node->base_bdev);
+		pt_node->buff = spdk_dma_zmalloc(length*10, buf_align, NULL);
+
+		/*10개의 block을 읽어들이는 작업, 읽고 나면 read_complete2로 넘어가는데, 그 안에서 원하는 문자열 있는지 확인한다.*/
+		for(i=0;i<8;i++){
+		rc = spdk_bdev_read(pt_node->base_desc, pt_ch->base_ch,
+				pt_node->buff+(i*512), (i*512), length, read_complete2, pt_node);
+		}
+		rc = spdk_bdev_read(pt_node->base_desc, pt_ch->base_ch,
+				pt_node->buff+(8*512), (8*512), length, _pt_complete_io, bdev_io);
+
+
+		/*application에 write 회수시키기 위한 작업*/
+		/*
+		rc = spdk_bdev_writev_blocks(pt_node->base_desc, pt_ch->base_ch, bdev_io->u.bdev.iovs,
+				bdev_io->u.bdev.iovcnt, bdev_io->u.bdev.offset_blocks,
+				bdev_io->u.bdev.num_blocks, _pt_complete_io,
+				bdev_io);
+		*/
+
+		/* write 내용 
 		if (bdev_io->u.bdev.md_buf == NULL) {
 			rc = spdk_bdev_writev_blocks(pt_node->base_desc, pt_ch->base_ch, bdev_io->u.bdev.iovs,
 						     bdev_io->u.bdev.iovcnt, bdev_io->u.bdev.offset_blocks,
@@ -323,6 +412,7 @@ vbdev_passthru_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *b
 							     bdev_io->u.bdev.num_blocks,
 							     _pt_complete_io, bdev_io);
 		}
+		*/
 		break;
 	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
 		rc = spdk_bdev_write_zeroes_blocks(pt_node->base_desc, pt_ch->base_ch,

@@ -34,14 +34,37 @@
 #include "spdk/stdinc.h"
 #include "spdk/thread.h"
 #include "spdk/bdev.h"
+#include "spdk/bdev_module.h"
 #include "spdk/env.h"
 #include "spdk/event.h"
 #include "spdk/log.h"
 #include "spdk/string.h"
 #include "spdk/bdev_zone.h"
 
-static char *g_bdev_name = "Malloc0";
+/*
+#include "spdk/config.h"
+#include "spdk/likely.h"
+#include "spdk/queue.h"
+#include "spdk/nvme_spec.h"
+#include "spdk/scsi_spec.h"
+#include "spdk/notify.h"
+#include "spdk/util.h"
+#include "spdk/trace.h"
+//#include "spdk_internal/thread.h"
+*/
 
+/*
+struct spdk_bdev;
+struct spdk_bdev_io;
+struct spdk_bdev_channel;
+void bdev_io_submit(struct spdk_bdev_io *bdev_io);
+void bdev_io_init(struct spdk_bdev_io *bdev_io, struct spdk_bdev *bdev, void *cb_arg,
+		spdk_bdev_io_completion_cb cb);
+struct spdk_bdev_io *bdev_channel_get_io(struct spdk_bdev_channel *channel);
+*/
+
+static char *g_bdev_name = "Nvme0";
+int spdk_i_i = 0,rr_flag = 0;
 /*
  * We'll use this struct to gather housekeeping hello_context to pass between
  * our events and callbacks.
@@ -80,6 +103,61 @@ static int hello_bdev_parse_arg(int ch, char *arg)
 }
 
 /*
+
+int spdk_bdev_search(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, uint64_t offset, uint64_t nbytes,
+		spdk_bdev_io_completion_cb cb, void *ch_arg)
+{
+	uint64_t offset_blocks, num_blocks;
+
+	if (bdev_bytes_to_blocks(spdk_bdev_desc_get_bdev(desc), offset, &offset_blocks,
+				nbytes, &num_blocks)!= 0) {
+		return -EINVAL;
+	}
+	
+	return spdk_bdev_search_blocks_md(desc, ch, buf, NULL, offset_blocks, num_blocks, cb, ch_arg);
+}
+
+
+int spdk_bdev_search_blocks_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, void *md_buf, uint64_t offset_blocks, uint64_t num_blocks,
+		spdk_bdev_io_completion_cb cb, void *ch_arg)
+{	
+	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
+	struct spdk_bdev_io *bdev_io;
+	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
+
+	if(!desc->write){
+		return -EBADF;
+	}
+	if(!bdev_io_valid_blocks(bdev, offset_blocks, num_blocks)) {
+		return -EINVAL;
+	}
+	
+	bdev_io = bdev_channel_get_io(channel);
+	if(!bdev_io){
+		return -ENOMEM;
+	}
+
+	bdev_io->internal.ch = channel;
+	bdev_io->internal.desc = desc;
+	bdev_io->type = SPDK_BDEV_NUM_IO_TYPES + 1;
+	bdev_io->u.bdev.iovs = &bdev_io->iov;
+	bdev_io->u.bdev.iovs[0].iov_base = buf;
+	bdev_io->u.bdev.iovs[0].iov_len = num_blocks * 512;
+	bdev_io->u.bdev.iovcnt = 1;
+	bdev_io->u.bdev.md_buf = md_buf;
+	bdev_io->u.bdev.num_blocks = num_blocks;
+	bdev_io->u.bdev.offset_blocks = offset_blocks;
+	bdev_io_init(bdev_io, bdev, ch_arg, cb);
+
+	bdev_io_submit(bdev_io);
+	return 0;
+
+}
+
+*/
+/*
  * Callback function for read io completion.
  */
 static void
@@ -88,31 +166,48 @@ read_complete(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 	struct hello_context_t *hello_context = cb_arg;
 
 	if (success) {
-		SPDK_NOTICELOG("Read string from bdev : %s\n", hello_context->buff);
+		SPDK_NOTICELOG("Read string from bdev : %s\n", hello_context->buff+(rr_flag*512));
+		printf("rr_flags = %d\n", rr_flag);
+		if(strcmp(hello_context->buff+(rr_flag*512),"hello world!4")==0)
+			printf("%s find\n",hello_context->buff+(rr_flag*512));
+		for(int i=0;i<13;i++){
+			printf("%c", *(hello_context->buff+(rr_flag*512)+i));
+		}
+		printf("\n");
 	} else {
 		SPDK_ERRLOG("bdev io read error\n");
 	}
-
+	if(rr_flag != 0){
+		rr_flag++;
+	}
 	/* Complete the bdev io and close the channel */
+	else if(rr_flag == 0){
 	spdk_bdev_free_io(bdev_io);
 	spdk_put_io_channel(hello_context->bdev_io_channel);
 	spdk_bdev_close(hello_context->bdev_desc);
 	SPDK_NOTICELOG("Stopping app\n");
 	spdk_app_stop(success ? 0 : -1);
+	}
 }
 
 static void
 hello_read(void *arg)
 {
 	struct hello_context_t *hello_context = arg;
-	int rc = 0;
+	int rc = 0,i=0;
 	uint32_t length = spdk_bdev_get_block_size(hello_context->bdev);
 
 	SPDK_NOTICELOG("Reading io\n");
-	rc = spdk_bdev_read(hello_context->bdev_desc, hello_context->bdev_io_channel,
-			    hello_context->buff, 0, length, read_complete, hello_context);
+	//printf("length:%u\n",length);
+//	rc = spdk_bdev_read(hello_context->bdev_desc, hello_context->bdev_io_channel,
+//				hello_context->buff, 0, length, read_complete, hello_context);
 
-	if (rc == -ENOMEM) {
+//	for(i=0;i<9;i++){
+		printf("count:%d\n",i);
+		rc = spdk_bdev_read(hello_context->bdev_desc, hello_context->bdev_io_channel,
+			    hello_context->buff+(i*512),i*512, length, read_complete, hello_context);
+	
+		if (rc == -ENOMEM) {
 		SPDK_NOTICELOG("Queueing io\n");
 		/* In case we cannot perform I/O now, queue I/O */
 		hello_context->bdev_io_wait.bdev = hello_context->bdev;
@@ -126,6 +221,7 @@ hello_read(void *arg)
 		spdk_bdev_close(hello_context->bdev_desc);
 		spdk_app_stop(-1);
 	}
+//	}
 }
 
 /*
@@ -153,21 +249,54 @@ write_complete(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 	/* Zero the buffer so that we can use it for reading */
 	length = spdk_bdev_get_block_size(hello_context->bdev);
 	memset(hello_context->buff, 0, length);
-
-	hello_read(hello_context);
+	if(rr_flag != 0){
+		rr_flag ++;
+	}
+	else if(rr_flag == 0){
+		hello_read(hello_context);
+		rr_flag = 0;
+	}
 }
 
 static void
 hello_write(void *arg)
 {
 	struct hello_context_t *hello_context = arg;
-	int rc = 0;
-	uint32_t length = spdk_bdev_get_block_size(hello_context->bdev);
+	char buf1[512];
+	int rc = 0,i=0;
+	uint32_t length = spdk_bdev_get_block_size(hello_context->bdev),buf_align;
 
-	SPDK_NOTICELOG("Writing to the bdev\n");
-	rc = spdk_bdev_write(hello_context->bdev_desc, hello_context->bdev_io_channel,
-			     hello_context->buff, 0, length, write_complete, hello_context);
-
+	SPDK_NOTICELOG("4. Writing to the bdev\n");
+		
+	//rc = spdk_bdev_write(hello_context->bdev_desc, hello_context->bdev_io_channel,
+	//		     hello_context->buff, 0, length, write_complete, hello_context);
+	//buf_align = spdk_bdev_get_buf_align(hello_context->bdev);
+	//buf1 = spdk_dma_zmalloc(length*10, buf_align, NULL);
+	printf("검색어를 입력하세요:");
+	scanf("%s",buf1);
+	printf("%s,,",buf1);	
+	snprintf(hello_context->buff, length, buf1);
+	// 새로운 함수 이전거 
+	//rc = spdk_bdev_write(hello_context->bdev_desc, hello_context->bdev_io_channel,
+	//		     hello_context->buff, 0, length, write_complete, hello_context);
+				 //
+	rc = spdk_bdev_search(hello_context->bdev_desc, hello_context->bdev_io_channel,
+			hello_context->buff, 0, length, write_complete, hello_context);
+	/*
+	for(i=0;i<9;i++){
+		
+		printf("hello world %d\n",i);
+		if(i==0){
+			snprintf(hello_context->buff+(i*512), length, "hello_world!%d",i);
+			rc = spdk_bdev_write(hello_context->bdev_desc, hello_context->bdev_io_channel,
+					hello_context->buff+(i*512), i*512, length, write_complete, hello_context);
+		}
+		else{
+			snprintf(hello_context->buff+(i*512), length, "hello world!%d",i);
+			rc = spdk_bdev_write(hello_context->bdev_desc, hello_context->bdev_io_channel,
+				hello_context->buff+(i*512), i*512 ,length, write_complete, hello_context); 
+		}
+		*/
 	if (rc == -ENOMEM) {
 		SPDK_NOTICELOG("Queueing io\n");
 		/* In case we cannot perform I/O now, queue I/O */
@@ -182,6 +311,7 @@ hello_write(void *arg)
 		spdk_bdev_close(hello_context->bdev_desc);
 		spdk_app_stop(-1);
 	}
+	//}
 }
 
 static void
@@ -242,12 +372,13 @@ static void
 hello_start(void *arg1)
 {
 	struct hello_context_t *hello_context = arg1;
+	char *buf1 = NULL;
 	uint32_t blk_size, buf_align;
 	int rc = 0;
 	hello_context->bdev = NULL;
 	hello_context->bdev_desc = NULL;
 
-	SPDK_NOTICELOG("Successfully started the application\n");
+	SPDK_NOTICELOG("2.Successfully started the application\n");
 
 	/*
 	 * There can be many bdevs configured, but this application will only use
@@ -272,6 +403,7 @@ hello_start(void *arg1)
 	SPDK_NOTICELOG("Opening io channel\n");
 	/* Open I/O channel */
 	hello_context->bdev_io_channel = spdk_bdev_get_io_channel(hello_context->bdev_desc);
+	//printf("channel is : %s\n",spdk_io_channel_get_io_device_name(hello_context->bdev_io_channel));
 	if (hello_context->bdev_io_channel == NULL) {
 		SPDK_ERRLOG("Could not create bdev I/O channel!!\n");
 		spdk_bdev_close(hello_context->bdev_desc);
@@ -284,7 +416,8 @@ hello_start(void *arg1)
 	 */
 	blk_size = spdk_bdev_get_block_size(hello_context->bdev);
 	buf_align = spdk_bdev_get_buf_align(hello_context->bdev);
-	hello_context->buff = spdk_dma_zmalloc(blk_size, buf_align, NULL);
+	hello_context->buff = spdk_dma_zmalloc(blk_size*10, buf_align, NULL);
+//	buf1 = spdk_dma_zmalloc(blk_size, buf_align, NULL);
 	if (!hello_context->buff) {
 		SPDK_ERRLOG("Failed to allocate buffer\n");
 		spdk_put_io_channel(hello_context->bdev_io_channel);
@@ -292,15 +425,23 @@ hello_start(void *arg1)
 		spdk_app_stop(-1);
 		return;
 	}
-	snprintf(hello_context->buff, blk_size, "%s", "Hello World!\n");
+	//snprintf(hello_context->buff, blk_size, "%s", "my");
 
 	if (spdk_bdev_is_zoned(hello_context->bdev)) {
 		hello_reset_zone(hello_context);
 		/* If bdev is zoned, the callback, reset_zone_complete, will call hello_write() */
 		return;
 	}
+	SPDK_NOTICELOG("3. hello_write 진입\n");
 
 	hello_write(hello_context);
+	//hello_read(hello_context);	
+	//SPDK_NOTICELOG("돌아왔음!\n");	
+	//spdk_bdev_free_io(bdev_io);
+	//spdk_put_io_channel(hello_context->bdev_io_channel);
+	//spdk_bdev_close(hello_context->bdev_desc);
+	//SPDK_NOTICELOG("하나 처리 완료!\n");
+	//spdk_app_stop(0);
 }
 
 int
@@ -323,7 +464,7 @@ main(int argc, char **argv)
 		exit(rc);
 	}
 	hello_context.bdev_name = g_bdev_name;
-
+	printf("g_bdev_name : %s,%s\n",hello_context.bdev_name,g_bdev_name);
 	/*
 	 * spdk_app_start() will initialize the SPDK framework, call hello_start(),
 	 * and then block until spdk_app_stop() is called (or if an initialization
@@ -334,7 +475,7 @@ main(int argc, char **argv)
 	if (rc) {
 		SPDK_ERRLOG("ERROR starting application\n");
 	}
-
+	printf("finfinfin\n");
 	/* At this point either spdk_app_stop() was called, or spdk_app_start()
 	 * failed because of internal error.
 	 */

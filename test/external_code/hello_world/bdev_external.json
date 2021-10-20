@@ -5,15 +5,15 @@
       "config": [
         {
           "params": {
-            "name": "Malloc0",
-            "block_size": 4096,
-            "num_blocks": 32
+            "name": "Nvme0",
+			"trtype": "pcie",
+			"traddr": "0000:02:00.0"
           },
-          "method": "construct_malloc_bdev"
+          "method": "construct_nvme_bdev"
         },
         {
           "params": {
-            "base_bdev_name": "Malloc0",
+            "base_bdev_name": "Nvme0n1",
             "name": "TestPT"
           },
           "method": "construct_ext_passthru_bdev"
