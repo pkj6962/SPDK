@@ -752,6 +752,21 @@ void *spdk_bdev_get_module_ctx(struct spdk_bdev_desc *desc);
  *   * -EINVAL - offset and/or nbytes are not aligned or out of range
  *   * -ENOMEM - spdk_bdev_io buffer cannot be allocated
  */
+
+/* 추가 함수*/
+
+int spdk_bdev_search(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, uint64_t offset, uint64_t nbytes,
+		spdk_bdev_io_completion_cb cb, void *ch_arg);
+
+
+int spdk_bdev_search_blocks_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, void *md_buf, uint64_t offset_blocks, uint64_t num_blocks,
+		spdk_bdev_io_completion_cb cb, void *ch_arg);
+
+
+
+
 int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		   void *buf, uint64_t offset, uint64_t nbytes,
 		   spdk_bdev_io_completion_cb cb, void *cb_arg);
@@ -896,6 +911,29 @@ int spdk_bdev_readv_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_c
 				   uint64_t offset_blocks, uint64_t num_blocks,
 				   spdk_bdev_io_completion_cb cb, void *cb_arg);
 
+/**
+ * 추가 함수
+ * chunk하는 함수
+**/
+int bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		    void *buf, uint64_t offset, uint64_t nbytes,
+		    spdk_bdev_io_completion_cb cb, void *cb_arg);
+
+int bdev_add_search(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		    void *buf, uint64_t offset, uint64_t nbytes,
+		    spdk_bdev_io_completion_cb cb, void *cb_arg);
+
+int bdev_chunk(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		    void *buf, uint64_t offset, uint64_t nbytes,
+		    spdk_bdev_io_completion_cb cb, void *cb_arg);
+
+int bdev_fingerprint(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		    void *buf, uint64_t offset, uint64_t nbytes,
+		    spdk_bdev_io_completion_cb cb, void *cb_arg);
+
+int bdev_indexsearch(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		    void *buf, uint64_t offset, uint64_t nbytes,
+		    spdk_bdev_io_completion_cb cb, void *cb_arg, char *mdString);
 /**
  * Submit a write request to the bdev on the given channel.
  *
