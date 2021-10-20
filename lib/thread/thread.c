@@ -498,7 +498,7 @@ spdk_thread_create(const char *name, struct spdk_cpuset *cpumask)
 	}
 
 	thread->state = SPDK_THREAD_STATE_RUNNING;
-
+	printf("create_thread!!!**************************************************************\n");
 	return thread;
 }
 
@@ -2047,7 +2047,7 @@ spdk_get_io_channel(void *io_device)
 	struct spdk_thread *thread;
 	struct io_device *dev;
 	int rc;
-
+	
 	pthread_mutex_lock(&g_devlist_mutex);
 	dev = io_device_get(io_device);
 	if (dev == NULL) {
@@ -2102,7 +2102,8 @@ spdk_get_io_channel(void *io_device)
 
 	SPDK_DEBUGLOG(thread, "Get io_channel %p for io_device %s (%p) on thread %s refcnt %u\n",
 		      ch, dev->name, dev->io_device, thread->name, ch->ref);
-
+	printf("Get io_channel %p for io_device %s (%p) on thread %s refcnt %u\n",
+		      ch, dev->name, dev->io_device, thread->name, ch->ref);	
 	dev->refcnt++;
 
 	pthread_mutex_unlock(&g_devlist_mutex);

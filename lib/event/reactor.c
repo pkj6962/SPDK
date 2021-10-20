@@ -488,7 +488,7 @@ spdk_event_allocate(uint32_t lcore, spdk_event_fn fn, void *arg1, void *arg2)
 		assert(false);
 		return NULL;
 	}
-
+	printf("spdk_event_allocate_here!@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
 	event->lcore = lcore;
 	event->fn = fn;
 	event->arg1 = arg1;

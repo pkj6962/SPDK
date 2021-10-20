@@ -266,6 +266,7 @@ nvme_io_qpair_print_command(uint16_t qid, struct spdk_nvme_cmd *cmd)
 	case SPDK_NVME_OPC_READ:
 	case SPDK_NVME_OPC_WRITE_UNCORRECTABLE:
 	case SPDK_NVME_OPC_COMPARE:
+		SPDK_NOTICELOG("opc:%d\n",(int)cmd->opc);
 		SPDK_NOTICELOG("%s sqid:%d cid:%d nsid:%d "
 			       "lba:%llu len:%d %s\n",
 			       nvme_get_string(io_opcode, cmd->opc), qid, cmd->cid, cmd->nsid,
@@ -684,7 +685,6 @@ spdk_nvme_qpair_process_completions(struct spdk_nvme_qpair *qpair, uint32_t max_
 {
 	int32_t ret;
 	struct nvme_request *req, *tmp;
-
 	if (spdk_unlikely(qpair->ctrlr->is_failed)) {
 		if (qpair->ctrlr->is_removed) {
 			nvme_qpair_set_state(qpair, NVME_QPAIR_DESTROYING);

@@ -579,6 +579,7 @@ spdk_app_start(struct spdk_app_opts *opts_user, spdk_msg_fn start_fn,
 	spdk_reactors_start();
 
 	g_env_was_setup = true;
+	printf("1. spdk_app_start 가 끝남!\n");
 
 	return g_spdk_app.rc;
 }
@@ -609,7 +610,7 @@ app_stop(void *arg1)
 	if (g_spdk_app.rc == 0) {
 		g_spdk_app.rc = (int)(intptr_t)arg1;
 	}
-
+	SPDK_NOTICELOG("app_stop!\n");
 	if (g_spdk_app.stopped) {
 		SPDK_NOTICELOG("spdk_app_stop called twice\n");
 		return;

@@ -46,11 +46,35 @@
 #include "spdk/util.h"
 #include "spdk/trace.h"
 
+
+#include "spdk_internal/thread.h"
 #include "spdk/bdev_module.h"
 #include "spdk/log.h"
 #include "spdk/string.h"
+#include <openssl/sha.h>
 
+/*
+#include "rte_common.h"
+#include "rte_malloc.h"
+#include "rte_cycles.h"
+#include "rte_random.h"
+#include "rte_memory.h"
+#include "rte_eal.h"
+#include "rte_ip.h"
+#include "rte_string_fns.h"
+
+
+#include "rte_hash.h"
+#include "rte_fbk_hash.h"
+#include "rte_jhash.h"
+#include "rte_hash_crc.h"
+*/
 #include "bdev_internal.h"
+
+#include "sys/time.h"
+#include "time.h"
+#include "stdio.h"
+#include "stdlib.h"
 
 #ifdef SPDK_CONFIG_VTUNE
 #include "ittnotify.h"
@@ -89,6 +113,27 @@ int __itt_init_ittlib(const char *, __itt_group_id);
  */
 #define SPDK_BDEV_MAX_CHILDREN_UNMAP_WRITE_ZEROES_REQS (8)
 
+
+/* 추가 : for hash *//*
+static struct rte_hash_parameters ut_params = {
+	.entries = 64,
+	.key_len = 13,
+	.hash_func = rte+jhash,
+	.hash_func_init_val = 0,
+	.socket_id = 0,
+};*/
+
+char Hash_Table[512][512][512] = { 0, };
+char bitvector[1000000] = { 0, };
+int chec = 0;
+int keyadd[10000000] = { 0,};
+//int bitmap[2047][262144]= { 0,};
+
+/*
+char mdString[SHA256_DIGEST_LENGTH*2+1];
+unsigned char digest[SHA256_DIGEST_LENGTH];
+char string[512];
+*/
 static const char *qos_rpc_type[] = {"rw_ios_per_sec",
 				     "rw_mbytes_per_sec", "r_mbytes_per_sec", "w_mbytes_per_sec"
 				    };
@@ -1669,7 +1714,6 @@ spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 	assert(bdev_io->internal.status != SPDK_BDEV_IO_STATUS_PENDING);
 
 	ch = bdev_io->internal.ch->shared_resource->mgmt_ch;
-
 	if (bdev_io->internal.buf != NULL) {
 		bdev_io_put_buf(bdev_io);
 	}
@@ -1679,7 +1723,7 @@ spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 		STAILQ_INSERT_HEAD(&ch->per_thread_cache, bdev_io, internal.buf_link);
 		while (ch->per_thread_cache_count > 0 && !TAILQ_EMPTY(&ch->io_wait_queue)) {
 			struct spdk_bdev_io_wait_entry *entry;
-
+			
 			entry = TAILQ_FIRST(&ch->io_wait_queue);
 			TAILQ_REMOVE(&ch->io_wait_queue, entry, link);
 			entry->cb_fn(entry->cb_arg);
@@ -1737,6 +1781,7 @@ bdev_is_read_io(struct spdk_bdev_io *bdev_io)
 	case SPDK_BDEV_IO_TYPE_NVME_IO_MD:
 		/* Bit 1 (0x2) set for read operation */
 		if (bdev_io->u.nvme_passthru.cmd.opc & SPDK_NVME_OPC_READ) {
+			//printf("bdev_is_read_io-passthr:%d\n",bdev_io->u.nvme_passthru.cmd.opc);
 			return true;
 		} else {
 			return false;
@@ -1895,8 +1940,20 @@ bdev_io_do_submit(struct spdk_bdev_channel *bdev_ch, struct spdk_bdev_io *bdev_i
 {
 	struct spdk_bdev *bdev = bdev_io->bdev;
 	struct spdk_io_channel *ch = bdev_ch->channel;
+	//struct io_device *io_dev = spdk_io_channel_get_io_device(ch);
 	struct spdk_bdev_shared_resource *shared_resource = bdev_ch->shared_resource;
+	/*
+	time_t t;
+	struct tm *lt;
+	struct timeval tv;
 
+	t = gettimeofday(&tv, NULL);
+	lt = localtime(&tv.tv_sec);
+
+	printf("ios 시간 : %04d-%02d-%02d %02d:%02d:%02d.%06d\n",
+			lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+			lt->tm_hour, lt->tm_min, lt->tm_sec, tv.tv_usec);
+	*/
 	if (spdk_unlikely(bdev_io->type == SPDK_BDEV_IO_TYPE_ABORT)) {
 		struct spdk_bdev_mgmt_channel *mgmt_channel = shared_resource->mgmt_ch;
 		struct spdk_bdev_io *bio_to_abort = bdev_io->u.abort.bio_to_abort;
@@ -1914,7 +1971,10 @@ bdev_io_do_submit(struct spdk_bdev_channel *bdev_ch, struct spdk_bdev_io *bdev_i
 		bdev_ch->io_outstanding++;
 		shared_resource->io_outstanding++;
 		bdev_io->internal.in_submit_request = true;
+		//printf("submit_request start!\n");
+		//printf("bdev_io->type,name,channel_name:%u,%s,%s\n",bdev_io->type,bdev_io->bdev->name,spdk_io_channel_get_io_device_name(ch));
 		bdev->fn_table->submit_request(ch, bdev_io);
+		//printf("submit_request complete!\n");
 		bdev_io->internal.in_submit_request = false;
 	} else {
 		TAILQ_INSERT_TAIL(&shared_resource->nomem_io, bdev_io, internal.link);
@@ -2464,11 +2524,16 @@ _bdev_io_submit(void *ctx)
 	struct spdk_bdev_channel *bdev_ch = bdev_io->internal.ch;
 	uint64_t tsc;
 
+	time_t t;
+	struct tm *lt;
+	struct timeval tv;
+
 	tsc = spdk_get_ticks();
 	bdev_io->internal.submit_tsc = tsc;
 	spdk_trace_record_tsc(tsc, TRACE_BDEV_IO_START, 0, 0, (uintptr_t)bdev_io, bdev_io->type);
 
 	if (spdk_likely(bdev_ch->flags == 0)) {
+		//printf("_bdev_io_submit!\n");
 		bdev_io_do_submit(bdev_ch, bdev_io);
 		return;
 	}
@@ -2552,6 +2617,16 @@ bdev_io_submit(struct spdk_bdev_io *bdev_io)
 	struct spdk_bdev *bdev = bdev_io->bdev;
 	struct spdk_thread *thread = spdk_bdev_io_get_thread(bdev_io);
 	struct spdk_bdev_channel *ch = bdev_io->internal.ch;
+/*
+	time_t t;
+	struct tm *lt;
+	struct timeval tv;
+
+	t=gettimeofday(&tv, NULL);
+	lt = localtime(&tv.tv_sec);
+
+	printf("io_submit : %02d:%02d:%02d.%06d\n",
+			lt->tm_hour, lt->tm_min, lt->tm_sec, tv.tv_usec);*/
 
 	assert(thread != NULL);
 	assert(bdev_io->internal.status == SPDK_BDEV_IO_STATUS_PENDING);
@@ -3765,7 +3840,7 @@ bdev_read_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch
 	bdev_io->u.bdev.num_blocks = num_blocks;
 	bdev_io->u.bdev.offset_blocks = offset_blocks;
 	bdev_io_init(bdev_io, bdev, cb_arg, cb);
-
+	//printf("bdev_read_blocks_with_md!\n");
 	bdev_io_submit(bdev_io);
 	return 0;
 }
@@ -3781,8 +3856,57 @@ spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 				 nbytes, &num_blocks) != 0) {
 		return -EINVAL;
 	}
+	//printf("spdk_bdev_read!\n");
 
 	return spdk_bdev_read_blocks(desc, ch, buf, offset_blocks, num_blocks, cb, cb_arg);
+}
+
+int
+spdk_bdev_search(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, uint64_t offset, uint64_t nbytes,
+		spdk_bdev_io_completion_cb cb, void *ch_arg)
+{
+	uint64_t offset_blocks, num_blocks;
+
+	if(bdev_bytes_to_blocks(spdk_bdev_desc_get_bdev(desc), offset, &offset_blocks,
+				nbytes, &num_blocks)!= 0) {
+		return -EINVAL;
+	}
+
+	return spdk_bdev_search_blocks_md(desc,ch,buf,NULL, offset_blocks, num_blocks, cb, ch_arg);
+}
+
+int spdk_bdev_search_blocks_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, void *md_buf, uint64_t offset_blocks, uint64_t num_blocks,
+		spdk_bdev_io_completion_cb cb, void *ch_arg)
+{
+	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
+	struct spdk_bdev_io *bdev_io;
+	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
+
+	if(!bdev_io_valid_blocks(bdev, offset_blocks, num_blocks)){
+		return -EINVAL;
+	}
+
+	bdev_io = bdev_channel_get_io(channel);
+	if(!bdev_io){
+		return -ENOMEM;
+	}
+
+	bdev_io->internal.ch = channel;
+	bdev_io->internal.desc = desc;
+	bdev_io->type = SPDK_BDEV_NUM_IO_TYPES + 1;
+	bdev_io->u.bdev.iovs = &bdev_io->iov;
+	bdev_io->u.bdev.iovs[0].iov_base = buf;
+	bdev_io->u.bdev.iovs[0].iov_len = num_blocks*512;
+	bdev_io->u.bdev.iovcnt = 1;
+	bdev_io->u.bdev.md_buf = md_buf;
+	bdev_io->u.bdev.num_blocks = num_blocks;
+	bdev_io->u.bdev.offset_blocks = offset_blocks;
+	bdev_io_init(bdev_io, bdev, ch_arg, cb);
+
+	bdev_io_submit(bdev_io);
+	return 0;
 }
 
 int
@@ -3790,6 +3914,7 @@ spdk_bdev_read_blocks(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		      void *buf, uint64_t offset_blocks, uint64_t num_blocks,
 		      spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
+	//printf("spdk_bdev_read_blocks!\n");
 	return bdev_read_blocks_with_md(desc, ch, buf, NULL, offset_blocks, num_blocks, cb, cb_arg);
 }
 
@@ -3914,6 +4039,7 @@ bdev_write_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *c
 	bdev_io->internal.ch = channel;
 	bdev_io->internal.desc = desc;
 	bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
+	//SPDK_NOTICELOG("bdev_io->type:%u!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",bdev_io->type);
 	bdev_io->u.bdev.iovs = &bdev_io->iov;
 	bdev_io->u.bdev.iovs[0].iov_base = buf;
 	bdev_io->u.bdev.iovs[0].iov_len = num_blocks * bdev->blocklen;
@@ -3922,11 +4048,213 @@ bdev_write_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *c
 	bdev_io->u.bdev.num_blocks = num_blocks;
 	bdev_io->u.bdev.offset_blocks = offset_blocks;
 	bdev_io_init(bdev_io, bdev, cb_arg, cb);
-
+	//SPDK_NOTICELOG("bdev_io->bdev_name:%s\n",bdev_io->bdev->name);
+	//SPDK_NOTICELOG("bedv_io->channel:%s\n",spdk_io_channel_get_io_device_name(ch));
 	bdev_io_submit(bdev_io);
 	return 0;
 }
+int
+bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, uint64_t offset, uint64_t nbytes,
+		spdk_bdev_io_completion_cb cb, void *cb_arg)
+{	
+	int bit=0, cel = 0,t = 0,ii=0;
+	uint64_t *pi;
+	uint64_t hash1 = 0;
+	/** hash : SHA1**/
+	unsigned char digest[SHA_DIGEST_LENGTH];
+	char mdString[10];
+	char string[512];
+	sprintf(string,"%ld", offset);
+	printf("string:%s\n",string);
+	SHA1((unsigned char*)string, strlen(string), (unsigned char*)&digest);
+	for(ii=0;ii<SHA_DIGEST_LENGTH/10;ii++){
+		sprintf(&mdString[ii*2], "%02x", (unsigned int)digest[ii]);
+	}
+	printf("SHA1 digest: %s\n",mdString);
+	pi = (int*)mdString;
+	printf("SHA1 digestint: %d %x\n",*pi, *pi);
+	hash1 = *pi;
+	hash1 = hash1 % 10000000;
+	printf("SHA1 hash1: %d %x\n",hash1, hash1);
 
+	//cel = (nbytes/512+1)*8;**/
+
+	//기존!
+	//필요한 블럭 수 계산
+	bit = nbytes/512;
+	cel = (nbytes/512+1)*8;
+	if(nbytes/512==1){
+		cel = 8;
+	}
+		
+	//printf("offset:%u,cel:%d\n",offset,cel);
+	//if(bit%8 != 0){
+	//	cel = cel + 1;
+	//}
+	//key가 음수이면 양수 만들기
+	//if(offset < 0){
+	//	offset = offset * (-1);
+	//}
+	//hash 계산하기
+	//hash1 = offset%10000000;
+	if(keyadd[hash1]!=0){
+		//이미 hash 자리에 값이 있으면 덮어씌우기
+		if(keyadd[hash1]<0){
+			if(keyadd[hash1] == -1){
+				t = 0;
+			}/*
+			else{
+				printf("keyadd:%u\n",keyadd[hash1]);
+				t = keyadd[hash1] * (-1);
+				keyadd[hash1] = t;
+				printf("keyadd:%u,t:%u\n",keyadd[hash1],t);
+			}*/
+		}
+		else{
+			t = keyadd[hash1];
+		}
+		printf("이미있음:%d,개수:%d,hash:%d,값:%d\n",t,cel,hash1,keyadd[hash1]);
+		spdk_bdev_write(desc,ch,buf,t*512,cel*512,cb,cb_arg);
+	}
+	else{
+		//hash 자리에 처음 배정하는거면 빈 블럭 할당받기
+		t = 0;
+		ii = chec;
+		while(t < cel){
+			if(bitvector[ii]==0){
+				t = t+1;
+			}
+			else{
+				t = 0;
+			}
+			ii++;
+		}
+		chec = ii;
+		for(int i=0;i<cel;i++){
+			bitvector[ii-t+i] = 1;
+		}
+		keyadd[hash1] = ii-t;
+		printf("************************hash:%d,할당된block:%d,cel수:%d\n",hash1,ii-t,cel);
+		if(ii==cel){
+			keyadd[hash1]=-1;
+		}
+		spdk_bdev_write(desc, ch, buf, (ii-t)*512,cel*512,cb, cb_arg);
+	}
+}
+
+int
+bdev_add_search(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, uint64_t offset, uint64_t nbytes,
+		spdk_bdev_io_completion_cb cb, void *cb_arg)
+{
+	int bit = 0,t = 0,cel = 0, hash1 = 0;
+	cel = (nbytes/512+1)*8; 
+	hash1 = offset%1000;
+	if(keyadd[hash1] != 0){
+		t = keyadd[hash1];
+		printf("key:%d,blocknum:%d\n",hash1,t);
+		t = t*512;
+	}
+	else{
+		t = keyadd[hash1];
+		t = t*512;
+	}
+	
+	spdk_bdev_read(desc, ch, buf ,t, cel*512,cb,cb_arg);
+}
+
+int
+bdev_chunk(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, uint64_t offset, uint64_t nbytes,
+		spdk_bdev_io_completion_cb cb, void *cb_arg)
+{
+	
+	struct spdk_bdev_io *bdev_io = cb_arg;
+	int i = 0;
+	for(i=0; i<=bdev_io->u.nvme_passthru.cmd.cdw12;i++){
+		printf("bdev_chunk:%d\n",i);
+		bdev_fingerprint(desc, ch, buf+(i*512), (offset+i)*512, 512, cb, cb_arg);
+	}
+
+}
+
+int
+bdev_fingerprint(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, uint64_t offset, uint64_t nbytes,
+		spdk_bdev_io_completion_cb cb, void *cb_arg)
+{
+	uint32_t hash;
+	unsigned char digest[SHA_DIGEST_LENGTH];
+	char mdString[SHA_DIGEST_LENGTH*2+1];
+	char string[512];
+	
+	snprintf(string, 512,buf);
+	SHA1((unsigned char*)&string, strlen(string), (unsigned char*)&digest);
+	printf("heh\n");
+	for(int i=0;i<SHA_DIGEST_LENGTH; i++){
+		sprintf(&mdString[i*2], "%02x",(unsigned int)digest[i]);
+	}
+	printf("SHA1 digest: %s\n",mdString);
+	bdev_indexsearch(desc, ch, buf,offset, nbytes,cb,cb_arg,mdString);
+}
+
+int
+bdev_indexsearch(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, uint64_t offset, uint64_t nbytes,
+		spdk_bdev_io_completion_cb cb, void *cb_arg, char *mdString)
+{
+	int ii = 0;
+	int blocknum = 0;
+	struct spdk_bdev_io *bdev_io = cb_arg;
+	// read : 해당 자리의 fingerprint가 같으면 그냥 거기거 읽으면 되고,
+	// read : 해당 자리의 fingerprint가 다르면 for문 돌면서 fingerprint 같은block 찾기
+	blocknum = offset/512;
+	/*
+	for(ii=0; ii<512; ii++){
+		if(Hash_Table[ii][0][0] != 0){
+			if(strcmp(Hash_Table[ii][
+		}
+	}
+*/
+	snprintf(Hash_Table[ii][ii],512,mdString);
+	printf("Hash_Table:%s\n",Hash_Table[ii][ii]);
+	/*
+	for(ii=0; ii<512; ii++){
+		if(Hash_Table[ii][0] !=0){
+		}
+		else{
+			//Hash_Table이 
+			break;
+		}
+	}*/
+	// write : 쓰기 위해 체크
+	// read : 다른 block에 reference 된 경우
+	/*
+	for(ii=0;ii<512;ii++){
+		//둘이 같은 경우 -> 쓸 필요 없음
+		if((Hash_Table[ii][0] != 0) && (strcmp(*Hash_Table[ii],mdString)==0)){
+			bdev_io_complete(cb_arg);
+		//write : write 하지 않고 callback하는 함수 구현
+		//read : 여기의 내용을 읽어야 하므로 read 
+		}
+	}
+	*/
+	//0. fingerprint 값이 같은 block이 있는지 index table에서 찾아야 함
+	// 	 여기에서 찾는거 구현
+
+
+	//1. bdev_io 혹은 ch_arg 즉 orig_io에 쓰는 block 수를 저장하고, 
+	//	 그를 passthru의 complete2에서 그 숫자와 비교해서 쓰기가 완료되었으면 complete_io를 부를 수 있도록 해야함
+	
+	//1. 동일한 block이 있으면 call back으로 돌려주고,
+	//   동일한 block이 없으면 spdk_bdev_write로 block 쓰기
+	printf("indexsearch!\n");
+	spdk_bdev_write(desc, ch, buf,offset, nbytes,cb,cb_arg);
+}
+
+
+	
 int
 spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		void *buf, uint64_t offset, uint64_t nbytes,
@@ -5236,11 +5564,13 @@ bdev_io_complete(void *ctx)
 	if (bdev_io->internal.status == SPDK_BDEV_IO_STATUS_SUCCESS) {
 		switch (bdev_io->type) {
 		case SPDK_BDEV_IO_TYPE_READ:
+			//printf("____________________-I/O complete:read\n");
 			bdev_io->internal.ch->stat.bytes_read += bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen;
 			bdev_io->internal.ch->stat.num_read_ops++;
 			bdev_io->internal.ch->stat.read_latency_ticks += tsc_diff;
 			break;
 		case SPDK_BDEV_IO_TYPE_WRITE:
+			//printf("____________________-I/O complete:write\n");
 			bdev_io->internal.ch->stat.bytes_written += bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen;
 			bdev_io->internal.ch->stat.num_write_ops++;
 			bdev_io->internal.ch->stat.write_latency_ticks += tsc_diff;
@@ -5381,7 +5711,6 @@ spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status sta
 			bdev_ch_retry_io(bdev_ch);
 		}
 	}
-
 	bdev_io_complete(bdev_io);
 }
 
@@ -5901,7 +6230,7 @@ spdk_bdev_open_ext(const char *bdev_name, bool write, spdk_bdev_event_cb_t event
 		pthread_mutex_unlock(&g_bdev_mgr.mutex);
 		return -ENODEV;
 	}
-
+	printf("이 bdev에 I/O request를 보내고싶음 %s\n",bdev_name);
 	desc = calloc(1, sizeof(*desc));
 	if (desc == NULL) {
 		SPDK_ERRLOG("Failed to allocate memory for bdev descriptor\n");

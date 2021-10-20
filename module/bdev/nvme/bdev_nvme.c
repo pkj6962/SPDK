@@ -51,6 +51,10 @@
 #include "spdk/bdev_module.h"
 #include "spdk/log.h"
 
+#include "sys/time.h"
+#include "time.h"
+#include "stdio.h"
+
 #define SPDK_BDEV_NVME_DEFAULT_DELAY_CMD_SUBMIT true
 #define SPDK_BDEV_NVME_DEFAULT_KEEP_ALIVE_TIMEOUT_IN_MS	(10000)
 
@@ -845,7 +849,14 @@ bdev_nvme_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_i
 	struct spdk_nvme_ns *ns;
 	struct spdk_nvme_qpair *qpair;
 	int rc = 0;
+/*
+	time_t t;
+	struct tm *lt;
+	struct timeval tv;
 
+	t = gettimeofday(&tv, NULL);
+	lt = localtime(&tv.tv_sec);
+*/
 	if (spdk_unlikely(!bdev_nvme_find_io_path(nbdev_ch, &ns, &qpair))) {
 		rc = -ENXIO;
 		goto exit;
@@ -870,6 +881,12 @@ bdev_nvme_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_i
 		}
 		break;
 	case SPDK_BDEV_IO_TYPE_WRITE:
+	/*	
+		printf("nvme submit request : %04d-%02d-%02d %02d:%02d:%02d.%06d\n",
+				lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+				lt->tm_hour, lt->tm_min, lt->tm_sec, tv.tv_usec);
+			*/
+		//printf("nvme_submit_request fin, and bdev_nvme_writev is calling\n");
 		rc = bdev_nvme_writev(ns,
 				      qpair,
 				      nbdev_io,
@@ -2692,6 +2709,7 @@ bdev_nvme_create(struct spdk_nvme_transport_id *trid,
 		free(ctx);
 		return -ENODEV;
 	}
+	printf("************************************************************************************trid (traddr: %s)\n", trid->traddr);
 	ctx->poller = SPDK_POLLER_REGISTER(bdev_nvme_async_poll, ctx, 1000);
 
 	return 0;

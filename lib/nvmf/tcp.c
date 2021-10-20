@@ -1071,6 +1071,7 @@ nvmf_tcp_port_accept(struct spdk_nvmf_transport *transport, struct spdk_nvmf_tcp
 		count++;
 		nvmf_tcp_handle_connect(transport, port, sock);
 	}
+//	printf("port_accept_count:%u\n",count);
 
 	return count;
 }

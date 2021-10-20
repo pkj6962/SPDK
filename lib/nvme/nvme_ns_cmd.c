@@ -448,6 +448,7 @@ _nvme_ns_cmd_rw(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 	 *  boundary, split the request into multiple requests and submit each
 	 *  separately to hardware.
 	 */
+	//printf("parsing command is starting!\n");
 	if (sectors_per_stripe > 0 &&
 	    (((lba & (sectors_per_stripe - 1)) + lba_count) > sectors_per_stripe)) {
 
