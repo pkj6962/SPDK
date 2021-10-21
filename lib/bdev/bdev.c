@@ -53,22 +53,6 @@
 #include "spdk/string.h"
 #include <openssl/sha.h>
 
-/*
-#include "rte_common.h"
-#include "rte_malloc.h"
-#include "rte_cycles.h"
-#include "rte_random.h"
-#include "rte_memory.h"
-#include "rte_eal.h"
-#include "rte_ip.h"
-#include "rte_string_fns.h"
-
-
-#include "rte_hash.h"
-#include "rte_fbk_hash.h"
-#include "rte_jhash.h"
-#include "rte_hash_crc.h"
-*/
 #include "bdev_internal.h"
 
 #include "sys/time.h"
@@ -123,10 +107,34 @@ static struct rte_hash_parameters ut_params = {
 	.socket_id = 0,
 };*/
 
-char Hash_Table[512][512][512] = { 0, };
+
+/***** hash table 용 자료구조 *****/
+struct _node{
+		int address;
+		int hash;
+		struct _node *next;
+};
+	
+struct arrayitem
+{
+	struct _node *head;
+	struct _node *tail;
+};
+
+struct arrayitem *array1;
+array1 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+arraycheck[4096] = {0,};
+
+int bucket0[255]={0,};
+int bucket1[255]={0,};
+int bucket2[255]={0,};
+int bucket3[255]={0,};
+
+
 char bitvector[1000000] = { 0, };
 int chec = 0;
 int keyadd[10000000] = { 0,};
+int bitvec[10000000] = { 0,};
 //int bitmap[2047][262144]= { 0,};
 
 /*
@@ -4059,57 +4067,150 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		spdk_bdev_io_completion_cb cb, void *cb_arg)
 {	
 	int bit=0, cel = 0,t = 0,ii=0;
+	int a=0, b = 0,i=0,j=0,num, bucket;
 	uint64_t *pi;
 	uint64_t hash1 = 0;
-	/** hash : SHA1**/
+	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
+
+	int hashint, entry;
+	/************************** hash : SHA1******************************/
 	unsigned char digest[SHA_DIGEST_LENGTH];
 	char mdString[10];
 	char string[512];
 	sprintf(string,"%ld", offset);
-	printf("string:%s\n",string);
+	printf("string:%s,%x\n",string,*string);
 	SHA1((unsigned char*)string, strlen(string), (unsigned char*)&digest);
-	for(ii=0;ii<SHA_DIGEST_LENGTH/10;ii++){
+	for(ii=0;ii<SHA_DIGEST_LENGTH/5;ii++){
 		sprintf(&mdString[ii*2], "%02x", (unsigned int)digest[ii]);
 	}
-	printf("SHA1 digest: %s\n",mdString);
+	printf("int size: %d\n",sizeof(bit));
+	printf("SHA1 digest: %s,%x\n",mdString,*mdString);
 	pi = (int*)mdString;
-	printf("SHA1 digestint: %d %x\n",*pi, *pi);
+	printf("SHA1 digestint: %d 0x%x\n",*pi, *pi);
 	hash1 = *pi;
 	hash1 = hash1 % 10000000;
 	printf("SHA1 hash1: %d %x\n",hash1, hash1);
+	/********************************************************************/
+	
 
-	//cel = (nbytes/512+1)*8;**/
+	/************************ HASH TABLE 삽입****************************/
+	hashint = *pi;
 
-	//기존!
-	//필요한 블럭 수 계산
-	bit = nbytes/512;
-	cel = (nbytes/512+1)*8;
-	if(nbytes/512==1){
-		cel = 8;
+	entry = (hashint & 65520)/16;
+	printf("entry int:%d,hash:%x\n",entry, entry);
+	
+	//node 할당 및 초기화
+	struct _node *item = (struct _node*)malloc(sizeof(struct _node));
+	item->hash = (hashint & 4294901760)>>16;
+	item->next = NULL;
+
+	//array[entry] 에 가장 먼저 진입하는 경우
+	if(arraycheck[entry] == 0){
+		printf("0_first_Inserting %d(hash) and %d(address) \n", item->hash, item->address);
+		arraycheck[entry] == 1;
+		array[entry].head = item;
+		array[entry].tail = item;
 	}
+	else{
+		printf("n_first_Inserting %d(hash) and %d(address) \n", item->hash, item->address);
+		array[entry].tail->next = item;
+		array[entry].tail = item;
+	}
+	/********************************************************************/
+	
+
+	/************************ Page allocation ****************************/
+	while(item->address==0){
+		switch(bucket){
+			case 0:
+				num = bucket0[0];
+				i = num / 32 + 1;
+				j = num % 32;
+				bit = 1 << j;
+				while(1){
+					if((bucket0[i]&0xFFFFFFFF)!=0xFFFFFFFF){
+						while((bucket0[i]&bit)==bit){
+							t = t + 1;
+							if(t==cel){
+								
+							}
+							if(bit == 0x80000000){
+								break;
+							}
+						}
+					}
+					
+
+					i++;
+					//끝에 도달하면 처음으로 돌아가기
+					if(i == 2000001)
+						i = 1;
+					//한바퀴 돌았으면 bucket +1 후 다시 돌기
+					if(i == num){
+						bucket ++;
+						break;
+					}
+				}
+
+				break;
+			case 1:
+				break;
+			case 2:
+				break;
+			case 3:
+				break;
+			case 4:
+				break;
+			case 5:
+				break;
+			case 6:
+				break;
+			case 7:
+				break;
+			case 8:
+				break;
+			case 9:
+				break;
+			case 10:
+				break;
+			case 11:
+				break;
+			case 12:
+				break;
+			case 13:
+				break;
+			case 14:
+				break;
+	}
+	
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	cel = nbytes/512+1;
 		
-	//printf("offset:%u,cel:%d\n",offset,cel);
-	//if(bit%8 != 0){
-	//	cel = cel + 1;
-	//}
-	//key가 음수이면 양수 만들기
-	//if(offset < 0){
-	//	offset = offset * (-1);
-	//}
-	//hash 계산하기
-	//hash1 = offset%10000000;
 	if(keyadd[hash1]!=0){
 		//이미 hash 자리에 값이 있으면 덮어씌우기
-		if(keyadd[hash1]<0){
-			if(keyadd[hash1] == -1){
-				t = 0;
-			}/*
-			else{
-				printf("keyadd:%u\n",keyadd[hash1]);
-				t = keyadd[hash1] * (-1);
-				keyadd[hash1] = t;
-				printf("keyadd:%u,t:%u\n",keyadd[hash1],t);
-			}*/
+		if(keyadd[hash1] == -1){
+			t = 0;
 		}
 		else{
 			t = keyadd[hash1];
@@ -4119,27 +4220,30 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	}
 	else{
 		//hash 자리에 처음 배정하는거면 빈 블럭 할당받기
-		t = 0;
-		ii = chec;
-		while(t < cel){
-			if(bitvector[ii]==0){
-				t = t+1;
-			}
-			else{
-				t = 0;
-			}
-			ii++;
+		//keyadd에 넣는 주소는 그대로 10진수 넣고, a, b로 찾는걸로 하자
+		a = chec >> 5;
+		b = chec & 31;
+		t=0;
+
+		t = (1<<(cel)) - 1;
+		
+		pthread_mutex_lock(&bdev->internal.mutex);
+		bitvec[a] |= t<<b;	
+		pthread_mutex_unlock(&bdev->internal.mutex);
+		printf("_____bitvec_t%d,%d:%08x\n",a,b,bitvec[a]);
+		/*
+		for(i=0;i<cel;i++){
+			bitvec[a] += (1<<(b+i));
+			printf("bitvec%d,%d:%08x\n",a,b+i,bitvec[a]);
 		}
-		chec = ii;
-		for(int i=0;i<cel;i++){
-			bitvector[ii-t+i] = 1;
+		*/
+		keyadd[hash1] = chec;
+		chec += cel;
+		if(keyadd[hash1] == 0){
+			keyadd[hash1] = -1;
 		}
-		keyadd[hash1] = ii-t;
-		printf("************************hash:%d,할당된block:%d,cel수:%d\n",hash1,ii-t,cel);
-		if(ii==cel){
-			keyadd[hash1]=-1;
-		}
-		spdk_bdev_write(desc, ch, buf, (ii-t)*512,cel*512,cb, cb_arg);
+		printf("************************hash:%d,할당된block:%d,cel수:%d\n",hash1,chec-cel,cel);
+		spdk_bdev_write(desc, ch, buf, (chec-cel)*4096,cel*4096,cb, cb_arg);
 	}
 }
 
