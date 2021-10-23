@@ -121,8 +121,8 @@ struct arrayitem
 	struct _node *tail;
 };
 
-struct arrayitem *array1;
-array1 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+struct arrayitem *array_ = NULL;
+//array_ = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
 arraycheck[4096] = {0,};
 
 int bucket0[255]={0,};
@@ -4078,173 +4078,90 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	char mdString[10];
 	char string[512];
 	sprintf(string,"%ld", offset);
-	printf("string:%s,%x\n",string,*string);
+	//printf("string:%s,%x\n",string,*string);
 	SHA1((unsigned char*)string, strlen(string), (unsigned char*)&digest);
 	for(ii=0;ii<SHA_DIGEST_LENGTH/5;ii++){
 		sprintf(&mdString[ii*2], "%02x", (unsigned int)digest[ii]);
 	}
-	printf("int size: %d\n",sizeof(bit));
-	printf("SHA1 digest: %s,%x\n",mdString,*mdString);
+	//printf("SHA1 digest: %s,%x\n",mdString,*mdString);
 	pi = (int*)mdString;
-	printf("SHA1 digestint: %d 0x%x\n",*pi, *pi);
+	//printf("SHA1 digestint: %d 0x%x\n",*pi, *pi);
 	hash1 = *pi;
 	hash1 = hash1 % 10000000;
-	printf("SHA1 hash1: %d %x\n",hash1, hash1);
+	//printf("SHA1 hash1: %d %x\n",hash1, hash1);
 	/********************************************************************/
 	
 
 	/************************ HASH TABLE 삽입****************************/
+	cel = nbytes/512+1;
 	hashint = *pi;
 
 	entry = (hashint & 65520)/16;
-	printf("entry int:%d,hash:%x\n",entry, entry);
+	//printf("entry int:%d,hash:%x\n",entry, entry);
 	
 	//node 할당 및 초기화
 	struct _node *item = (struct _node*)malloc(sizeof(struct _node));
 	item->hash = (hashint & 4294901760)>>16;
 	item->next = NULL;
+	item->address = 0;
+	//printf("entry :0x%x,hash:0x%x\n",entry, item->hash);
 
 	//array[entry] 에 가장 먼저 진입하는 경우
+	pthread_mutex_lock(&bdev->internal.mutex);
 	if(arraycheck[entry] == 0){
-		printf("0_first_Inserting %d(hash) and %d(address) \n", item->hash, item->address);
-		arraycheck[entry] == 1;
-		array[entry].head = item;
-		array[entry].tail = item;
+		arraycheck[entry] = 1;
+		pthread_mutex_unlock(&bdev->internal.mutex);
+		if(array_ == NULL){
+			//printf("array할당@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@22\n");
+			array_ = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+		}
+		array_[entry].head = item;
+		array_[entry].tail = item;
+		//printf("1111111111111111_first_Inserting %d(hash) and %d(address)1111111111\n", item->hash, item->address);
 	}
-	else{
-		printf("n_first_Inserting %d(hash) and %d(address) \n", item->hash, item->address);
-		array[entry].tail->next = item;
-		array[entry].tail = item;
+	else{//entry에 가장먼저 진입하지 않고, 
+		pthread_mutex_unlock(&bdev->internal.mutex);
+		struct _node *tem = array_[entry].head;
+		while(tem!=NULL){
+			if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
+				//printf("22222222222222222222222시작block:%d,cel수:%d222222222222222222222\n",tem->address,cel);
+				spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
+				free(item);
+				return;
+			}
+			tem = tem->next;
+		}
+		//존재하는 hash node 없는 경우
+		//printf("333333333333333333333333_first_Inserting %d(hash) and %d(address)333333333333333333 \n", item->hash, item->address);
+		pthread_mutex_lock(&bdev->internal.mutex);
+		array_[entry].tail->next = item;
+		array_[entry].tail = item;
+		pthread_mutex_unlock(&bdev->internal.mutex);
 	}
 	/********************************************************************/
 	
 
 	/************************ Page allocation ****************************/
-	while(item->address==0){
-		switch(bucket){
-			case 0:
-				num = bucket0[0];
-				i = num / 32 + 1;
-				j = num % 32;
-				bit = 1 << j;
-				while(1){
-					if((bucket0[i]&0xFFFFFFFF)!=0xFFFFFFFF){
-						while((bucket0[i]&bit)==bit){
-							t = t + 1;
-							if(t==cel){
-								
-							}
-							if(bit == 0x80000000){
-								break;
-							}
-						}
-					}
-					
-
-					i++;
-					//끝에 도달하면 처음으로 돌아가기
-					if(i == 2000001)
-						i = 1;
-					//한바퀴 돌았으면 bucket +1 후 다시 돌기
-					if(i == num){
-						bucket ++;
-						break;
-					}
-				}
-
-				break;
-			case 1:
-				break;
-			case 2:
-				break;
-			case 3:
-				break;
-			case 4:
-				break;
-			case 5:
-				break;
-			case 6:
-				break;
-			case 7:
-				break;
-			case 8:
-				break;
-			case 9:
-				break;
-			case 10:
-				break;
-			case 11:
-				break;
-			case 12:
-				break;
-			case 13:
-				break;
-			case 14:
-				break;
-	}
 	
+	//a = chec >> 5;
+	//b = chec & 31;
+	t=0;
+	t = (1<<(cel)) - 1;
+	pthread_mutex_lock(&bdev->internal.mutex);
+	a = chec >> 5;
+	b = chec & 31;
+	bitvec[a] |= t<<b;	
+	chec += cel;
+	item->address = chec-cel;
+	pthread_mutex_unlock(&bdev->internal.mutex);
+	//printf("_____bitvec_t%d,%d:%08x\n",a,b,bitvec[a]);
 
-	
+	//item->address = chec-cel;
+	//printf("***********************시작block:%d,cel수:%d\n",item->address,cel);
+	spdk_bdev_write(desc, ch, buf, (item->address)*4096,cel*4096,cb, cb_arg);
 
+	/********************************************************************/
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	cel = nbytes/512+1;
-		
-	if(keyadd[hash1]!=0){
-		//이미 hash 자리에 값이 있으면 덮어씌우기
-		if(keyadd[hash1] == -1){
-			t = 0;
-		}
-		else{
-			t = keyadd[hash1];
-		}
-		printf("이미있음:%d,개수:%d,hash:%d,값:%d\n",t,cel,hash1,keyadd[hash1]);
-		spdk_bdev_write(desc,ch,buf,t*512,cel*512,cb,cb_arg);
-	}
-	else{
-		//hash 자리에 처음 배정하는거면 빈 블럭 할당받기
-		//keyadd에 넣는 주소는 그대로 10진수 넣고, a, b로 찾는걸로 하자
-		a = chec >> 5;
-		b = chec & 31;
-		t=0;
-
-		t = (1<<(cel)) - 1;
-		
-		pthread_mutex_lock(&bdev->internal.mutex);
-		bitvec[a] |= t<<b;	
-		pthread_mutex_unlock(&bdev->internal.mutex);
-		printf("_____bitvec_t%d,%d:%08x\n",a,b,bitvec[a]);
-		/*
-		for(i=0;i<cel;i++){
-			bitvec[a] += (1<<(b+i));
-			printf("bitvec%d,%d:%08x\n",a,b+i,bitvec[a]);
-		}
-		*/
-		keyadd[hash1] = chec;
-		chec += cel;
-		if(keyadd[hash1] == 0){
-			keyadd[hash1] = -1;
-		}
-		printf("************************hash:%d,할당된block:%d,cel수:%d\n",hash1,chec-cel,cel);
-		spdk_bdev_write(desc, ch, buf, (chec-cel)*4096,cel*4096,cb, cb_arg);
-	}
 }
 
 int
@@ -4321,8 +4238,8 @@ bdev_indexsearch(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		}
 	}
 */
-	snprintf(Hash_Table[ii][ii],512,mdString);
-	printf("Hash_Table:%s\n",Hash_Table[ii][ii]);
+	//snprintf(Hash_Table[ii][ii],512,mdString);
+	//printf("Hash_Table:%s\n",Hash_Table[ii][ii]);
 	/*
 	for(ii=0; ii<512; ii++){
 		if(Hash_Table[ii][0] !=0){
