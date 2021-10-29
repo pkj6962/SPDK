@@ -122,17 +122,32 @@ struct arrayitem
 };
 
 struct arrayitem *array_ = NULL;
+struct arrayitem *array1 = NULL;
+struct arrayitem *array2 = NULL;
+struct arrayitem *array3 = NULL;
+struct arrayitem *array4 = NULL;
 //array_ = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
-arraycheck[4096] = {0,};
+int arraycheck[4096] = {0,};
+int arraycheck1[4096] = {0,};
+int arraycheck2[4096] = {0,};
+int arraycheck3[4096] = {0,};
+int arraycheck4[4096] = {0,};
 
-int bucket0[255]={0,};
-int bucket1[255]={0,};
-int bucket2[255]={0,};
-int bucket3[255]={0,};
+//int bucket0[1000000]={0,};
+//int bucket1[1000000]={0,};
+//int bucket2[1000000]={0,};
+//int bucket3[1000000]={0,};
+//int bucket4[1000000]={0,};
 
 
-char bitvector[1000000] = { 0, };
+//char bitvector[1000000] = { 0, };
+
 int chec = 0;
+//int chec1 = 0;
+//int chec2 = 0;
+//int chec3 = 0;
+//int chec4 = 0;
+
 int keyadd[10000000] = { 0,};
 int bitvec[10000000] = { 0,};
 //int bitmap[2047][262144]= { 0,};
@@ -4067,7 +4082,7 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		spdk_bdev_io_completion_cb cb, void *cb_arg)
 {	
 	int bit=0, cel = 0,t = 0,ii=0;
-	int a=0, b = 0,i=0,j=0,num, bucket;
+	int a=0, b = 0,i=0,j=0,num, bucket,has;
 	uint64_t *pi;
 	uint64_t hash1 = 0;
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
@@ -4086,8 +4101,8 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	//printf("SHA1 digest: %s,%x\n",mdString,*mdString);
 	pi = (int*)mdString;
 	//printf("SHA1 digestint: %d 0x%x\n",*pi, *pi);
-	hash1 = *pi;
-	hash1 = hash1 % 10000000;
+	//hash1 = *pi;
+	//hash1 = hash1 % 10000000;
 	//printf("SHA1 hash1: %d %x\n",hash1, hash1);
 	/********************************************************************/
 	
@@ -4095,7 +4110,7 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	/************************ HASH TABLE 삽입****************************/
 	cel = nbytes/512+1;
 	hashint = *pi;
-
+	has = hashint & 15;
 	entry = (hashint & 65520)/16;
 	//printf("entry int:%d,hash:%x\n",entry, entry);
 	
@@ -4107,16 +4122,16 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	//printf("entry :0x%x,hash:0x%x\n",entry, item->hash);
 
 	//array[entry] 에 가장 먼저 진입하는 경우
+	if(has==0 || has==5){
 	pthread_mutex_lock(&bdev->internal.mutex);
 	if(arraycheck[entry] == 0){
 		arraycheck[entry] = 1;
-		pthread_mutex_unlock(&bdev->internal.mutex);
 		if(array_ == NULL){
-			//printf("array할당@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@22\n");
 			array_ = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
 		}
 		array_[entry].head = item;
 		array_[entry].tail = item;
+		pthread_mutex_unlock(&bdev->internal.mutex);
 		//printf("1111111111111111_first_Inserting %d(hash) and %d(address)1111111111\n", item->hash, item->address);
 	}
 	else{//entry에 가장먼저 진입하지 않고, 
@@ -4138,6 +4153,137 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		array_[entry].tail = item;
 		pthread_mutex_unlock(&bdev->internal.mutex);
 	}
+	}
+	else if(has==1 ||has==6){
+			pthread_mutex_lock(&bdev->internal.mutex);
+			if(arraycheck1[entry] == 0){
+			arraycheck1[entry] = 1;
+			if(array1 == NULL){
+				array1 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+			}
+			array1[entry].head = item;
+			array1[entry].tail = item;
+			pthread_mutex_unlock(&bdev->internal.mutex);
+		//printf("1111111111111111_first_Inserting %d(hash) and %d(address)1111111111\n", item->hash, item->address);
+	}
+	else{//entry에 가장먼저 진입하지 않고, 
+			pthread_mutex_unlock(&bdev->internal.mutex);
+			struct _node *tem = array1[entry].head;
+			while(tem!=NULL){
+				if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
+					//printf("22222222222222222222222시작block:%d,cel수:%d222222222222222222222\n",tem->address,cel);
+					spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
+					free(item);
+					return;
+				}
+				tem = tem->next;
+			}
+		//존재하는 hash node 없는 경우
+		//printf("333333333333333333333333_first_Inserting %d(hash) and %d(address)333333333333333333 \n", item->hash, item->address);
+		pthread_mutex_lock(&bdev->internal.mutex);
+		array1[entry].tail->next = item;
+		array1[entry].tail = item;
+		pthread_mutex_unlock(&bdev->internal.mutex);
+	}
+	}
+	else if(has==2 ||has==7){
+			pthread_mutex_lock(&bdev->internal.mutex);
+			if(arraycheck2[entry] == 0){
+			arraycheck2[entry] = 1;
+			if(array2 == NULL){
+				array2 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+			}
+			array2[entry].head = item;
+			array2[entry].tail = item;
+			pthread_mutex_unlock(&bdev->internal.mutex);
+		//printf("1111111111111111_first_Inserting %d(hash) and %d(address)1111111111\n", item->hash, item->address);
+	}
+	else{//entry에 가장먼저 진입하지 않고, 
+			pthread_mutex_unlock(&bdev->internal.mutex);
+			struct _node *tem = array2[entry].head;
+			while(tem!=NULL){
+				if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
+					//printf("22222222222222222222222시작block:%d,cel수:%d222222222222222222222\n",tem->address,cel);
+					spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
+					free(item);
+					return;
+				}
+				tem = tem->next;
+			}
+		//존재하는 hash node 없는 경우
+		//printf("333333333333333333333333_first_Inserting %d(hash) and %d(address)333333333333333333 \n", item->hash, item->address);
+		pthread_mutex_lock(&bdev->internal.mutex);
+		array2[entry].tail->next = item;
+		array2[entry].tail = item;
+		pthread_mutex_unlock(&bdev->internal.mutex);
+	}
+	}
+	else if(has==3 || has==8){
+		pthread_mutex_lock(&bdev->internal.mutex);
+			if(arraycheck3[entry] == 0){
+			arraycheck3[entry] = 1;
+			if(array3 == NULL){
+				array3 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+			}
+			array3[entry].head = item;
+			array3[entry].tail = item;
+			pthread_mutex_unlock(&bdev->internal.mutex);
+		//printf("1111111111111111_first_Inserting %d(hash) and %d(address)1111111111\n", item->hash, item->address);
+	}
+	else{//entry에 가장먼저 진입하지 않고, 
+			pthread_mutex_unlock(&bdev->internal.mutex);
+			struct _node *tem = array3[entry].head;
+			while(tem!=NULL){
+				if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
+					//printf("22222222222222222222222시작block:%d,cel수:%d222222222222222222222\n",tem->address,cel);
+					spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
+					free(item);
+					return;
+				}
+				tem = tem->next;
+			}
+		//존재하는 hash node 없는 경우
+		//printf("333333333333333333333333_first_Inserting %d(hash) and %d(address)333333333333333333 \n", item->hash, item->address);
+		pthread_mutex_lock(&bdev->internal.mutex);
+		array3[entry].tail->next = item;
+		array3[entry].tail = item;
+		pthread_mutex_unlock(&bdev->internal.mutex);
+	
+	}
+	}
+	else if(has==4 || has==9){
+		pthread_mutex_lock(&bdev->internal.mutex);
+			if(arraycheck4[entry] == 0){
+			arraycheck4[entry] = 1;
+			if(array4 == NULL){
+				array4 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+			}
+			array4[entry].head = item;
+			array4[entry].tail = item;
+			pthread_mutex_unlock(&bdev->internal.mutex);
+		//printf("1111111111111111_first_Inserting %d(hash) and %d(address)1111111111\n", item->hash, item->address);
+	}
+	else{//entry에 가장먼저 진입하지 않고, 
+			pthread_mutex_unlock(&bdev->internal.mutex);
+			struct _node *tem = array4[entry].head;
+			while(tem!=NULL){
+				if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
+					//printf("22222222222222222222222시작block:%d,cel수:%d222222222222222222222\n",tem->address,cel);
+					spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
+					free(item);
+					return;
+				}
+				tem = tem->next;
+			}
+		//존재하는 hash node 없는 경우
+		//printf("333333333333333333333333_first_Inserting %d(hash) and %d(address)333333333333333333 \n", item->hash, item->address);
+		pthread_mutex_lock(&bdev->internal.mutex);
+		array4[entry].tail->next = item;
+		array4[entry].tail = item;
+		pthread_mutex_unlock(&bdev->internal.mutex);
+	
+	}
+	}
 	/********************************************************************/
 	
 
@@ -4145,20 +4291,73 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	
 	//a = chec >> 5;
 	//b = chec & 31;
+	
 	t=0;
-	t = (1<<(cel)) - 1;
+	t= (1<<(cel))-1;
 	pthread_mutex_lock(&bdev->internal.mutex);
 	a = chec >> 5;
 	b = chec & 31;
-	bitvec[a] |= t<<b;	
+	bitvec[a] |= t<<b;
 	chec += cel;
 	item->address = chec-cel;
 	pthread_mutex_unlock(&bdev->internal.mutex);
-	//printf("_____bitvec_t%d,%d:%08x\n",a,b,bitvec[a]);
+	spdk_bdev_write(desc, ch, buf, (item->address)*4096,cel*4096,cb, cb_arg);
+	
+	/*
+	t=0;
+	t = (1<<(cel)) - 1;
+	if(has==0 || has==5){
+	pthread_mutex_lock(&bdev->internal.mutex);
+	a = chec >> 5;
+	b = chec & 31;
+	bucket0[a] |= t<<b;	
+	chec += cel;
+	item->address = chec-cel;
+	pthread_mutex_unlock(&bdev->internal.mutex);
 
+	//printf("_____bitvec_t%d,%d:%08x\n",a,b,bitvec[a]);
+	}
+	else if(has==1 || has==6){
+	pthread_mutex_lock(&bdev->internal.mutex);
+	a = chec1 >> 5;
+	b = chec1 & 31;
+	bucket1[a] |= t<<b;	
+	chec1 += cel;
+	item->address = chec1-cel;
+	pthread_mutex_unlock(&bdev->internal.mutex);
+		
+	}
+	else if(has==2 || has==7){	
+	pthread_mutex_lock(&bdev->internal.mutex);
+	a = chec2 >> 5;
+	b = chec2 & 31;
+	bucket2[a] |= t<<b;	
+	chec2 += cel;
+	item->address = chec2-cel;
+	pthread_mutex_unlock(&bdev->internal.mutex);
+	}
+	else if(has==3 || has==8){	
+	pthread_mutex_lock(&bdev->internal.mutex);
+	a = chec3 >> 5;
+	b = chec3 & 31;
+	bucket3[a] |= t<<b;	
+	chec3 += cel;
+	item->address = chec3-cel;
+	pthread_mutex_unlock(&bdev->internal.mutex);
+	}
+	else if(has==4 || has==9){
+	pthread_mutex_lock(&bdev->internal.mutex);
+	a = chec4 >> 5;
+	b = chec4 & 31;
+	bucket4[a] |= t<<b;	
+	chec4 += cel;
+	item->address = chec4-cel;
+	pthread_mutex_unlock(&bdev->internal.mutex);
+
+	}*/
 	//item->address = chec-cel;
 	//printf("***********************시작block:%d,cel수:%d\n",item->address,cel);
-	spdk_bdev_write(desc, ch, buf, (item->address)*4096,cel*4096,cb, cb_arg);
+	//spdk_bdev_write(desc, ch, buf, (item->address+has*200000)*4096,cel*4096,cb, cb_arg);
 
 	/********************************************************************/
 
