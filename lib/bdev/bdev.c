@@ -133,8 +133,8 @@ int arraycheck2[4096] = {0,};
 int arraycheck3[4096] = {0,};
 int arraycheck4[4096] = {0,};
 
-//int bucket0[1000000]={0,};
-//int bucket1[1000000]={0,};
+int bucket0[1000000]={0,};
+int bucket1[1000000]={0,};
 //int bucket2[1000000]={0,};
 //int bucket3[1000000]={0,};
 //int bucket4[1000000]={0,};
@@ -143,7 +143,7 @@ int arraycheck4[4096] = {0,};
 //char bitvector[1000000] = { 0, };
 
 int chec = 0;
-//int chec1 = 0;
+int chec1 = 0;
 //int chec2 = 0;
 //int chec3 = 0;
 //int chec4 = 0;
@@ -4112,6 +4112,7 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	hashint = *pi;
 	has = hashint & 15;
 	entry = (hashint & 65520)/16;
+	printf("***********hashint:%d,%x,has:%d,%x,entry:%d,%x\n",hashint,hashint,has,has,entry,entry);
 	//printf("entry int:%d,hash:%x\n",entry, entry);
 	
 	//node 할당 및 초기화
@@ -4123,6 +4124,7 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 
 	//array[entry] 에 가장 먼저 진입하는 경우
 	if(has==0 || has==5){
+		printf("0,5 has:%d,hash:%d\n",has,hashint);
 	pthread_mutex_lock(&bdev->internal.mutex);
 	if(arraycheck[entry] == 0){
 		arraycheck[entry] = 1;
@@ -4153,8 +4155,10 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		array_[entry].tail = item;
 		pthread_mutex_unlock(&bdev->internal.mutex);
 	}
+	
 	}
 	else if(has==1 ||has==6){
+			printf("1,6 has:%d,hash:%d\n",has,hashint);
 			pthread_mutex_lock(&bdev->internal.mutex);
 			if(arraycheck1[entry] == 0){
 			arraycheck1[entry] = 1;
@@ -4165,8 +4169,8 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 			array1[entry].tail = item;
 			pthread_mutex_unlock(&bdev->internal.mutex);
 		//printf("1111111111111111_first_Inserting %d(hash) and %d(address)1111111111\n", item->hash, item->address);
-	}
-	else{//entry에 가장먼저 진입하지 않고, 
+		}
+		else{//entry에 가장먼저 진입하지 않고, 
 			pthread_mutex_unlock(&bdev->internal.mutex);
 			struct _node *tem = array1[entry].head;
 			while(tem!=NULL){
@@ -4187,6 +4191,8 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	}
 	}
 	else if(has==2 ||has==7){
+			printf("2,7 has:%d,key:%d\n",has,hashint);
+			
 			pthread_mutex_lock(&bdev->internal.mutex);
 			if(arraycheck2[entry] == 0){
 			arraycheck2[entry] = 1;
@@ -4219,6 +4225,8 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	}
 	}
 	else if(has==3 || has==8){
+		
+			printf("3,8 has:%d,key:%d\n",has,hashint);
 		pthread_mutex_lock(&bdev->internal.mutex);
 			if(arraycheck3[entry] == 0){
 			arraycheck3[entry] = 1;
@@ -4251,7 +4259,9 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	
 	}
 	}
-	else if(has==4 || has==9){
+	else{
+			printf("4,9 has:%d,key:%d\n",has,hashint);
+		
 		pthread_mutex_lock(&bdev->internal.mutex);
 			if(arraycheck4[entry] == 0){
 			arraycheck4[entry] = 1;
@@ -4291,7 +4301,7 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	
 	//a = chec >> 5;
 	//b = chec & 31;
-	
+	/*if(){
 	t=0;
 	t= (1<<(cel))-1;
 	pthread_mutex_lock(&bdev->internal.mutex);
@@ -4301,12 +4311,13 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	chec += cel;
 	item->address = chec-cel;
 	pthread_mutex_unlock(&bdev->internal.mutex);
-	spdk_bdev_write(desc, ch, buf, (item->address)*4096,cel*4096,cb, cb_arg);
+	spdk_bdev_write(desc, ch, buf, (item->address)*4096,cel*4096,cb, cb_arg);*/
+
 	
-	/*
 	t=0;
 	t = (1<<(cel)) - 1;
-	if(has==0 || has==5){
+	if(has==0 || has==1 || has==2 || has==3 || has==4){
+		printf("5큰has:%d,hash:%d\n",has,hashint);
 	pthread_mutex_lock(&bdev->internal.mutex);
 	a = chec >> 5;
 	b = chec & 31;
@@ -4314,10 +4325,12 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	chec += cel;
 	item->address = chec-cel;
 	pthread_mutex_unlock(&bdev->internal.mutex);
+	spdk_bdev_write(desc, ch, buf, (item->address+has*10000)*4096,cel*4096,cb, cb_arg);
 
 	//printf("_____bitvec_t%d,%d:%08x\n",a,b,bitvec[a]);
 	}
-	else if(has==1 || has==6){
+	else{
+		printf("5작has:%d,hash:%d\n",has,hashint);
 	pthread_mutex_lock(&bdev->internal.mutex);
 	a = chec1 >> 5;
 	b = chec1 & 31;
@@ -4325,8 +4338,11 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	chec1 += cel;
 	item->address = chec1-cel;
 	pthread_mutex_unlock(&bdev->internal.mutex);
+	spdk_bdev_write(desc, ch, buf, (item->address+has*10000)*4096,cel*4096,cb, cb_arg);
 		
 	}
+
+	/*
 	else if(has==2 || has==7){	
 	pthread_mutex_lock(&bdev->internal.mutex);
 	a = chec2 >> 5;
@@ -4486,7 +4502,7 @@ spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 				 nbytes, &num_blocks) != 0) {
 		return -EINVAL;
 	}
-
+	printf("spdk_bdev_write:%lu\n",offset_blocks);
 	return spdk_bdev_write_blocks(desc, ch, buf, offset_blocks, num_blocks, cb, cb_arg);
 }
 
