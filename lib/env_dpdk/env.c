@@ -84,15 +84,16 @@ spdk_zmalloc(size_t size, size_t align, uint64_t *phys_addr, int socket_id, uint
 	void *buf;
 
 	if (flags == 0) {
+		SPDK_NOTICELOG("KKK\n");
 		return NULL;
 	}
 
 	align = spdk_max(align, RTE_CACHE_LINE_SIZE);
 	buf = rte_zmalloc_socket(NULL, size, align, socket_id);
 	if (buf && phys_addr) {
-#ifdef DEBUG
+// #ifdef DEBUG
 		SPDK_ERRLOG("phys_addr param in spdk_zmalloc() is deprecated\n");
-#endif
+// #endif
 		*phys_addr = virt_to_phys(buf);
 	}
 	return buf;

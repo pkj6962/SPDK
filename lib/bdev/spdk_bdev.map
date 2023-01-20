@@ -58,6 +58,9 @@
 	spdk_bdev_readv;
 	spdk_bdev_readv_blocks;
 	spdk_bdev_readv_blocks_with_md;
+
+	bdev_hash_insert; 
+
 	bdev_add_translate;
 	bdev_add_search;
 	bdev_chunk;

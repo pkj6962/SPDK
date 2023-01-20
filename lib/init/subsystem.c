@@ -38,6 +38,10 @@
 #include "spdk/queue.h"
 #include "spdk/thread.h"
 
+#include "spdk/bdev.h"
+
+
+
 #include "spdk_internal/init.h"
 #include "spdk/env.h"
 
@@ -58,6 +62,8 @@ static void *g_subsystem_start_arg = NULL;
 static spdk_msg_fn g_subsystem_stop_fn = NULL;
 static void *g_subsystem_stop_arg = NULL;
 static struct spdk_thread *g_fini_thread = NULL;
+
+
 
 void
 spdk_add_subsystem(struct spdk_subsystem *subsystem)
@@ -214,6 +220,8 @@ spdk_subsystem_init(spdk_subsystem_init_fn cb_fn, void *cb_arg)
 	}
 
 	subsystem_sort();
+
+
 
 	spdk_subsystem_init_next(0);
 }

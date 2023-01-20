@@ -85,6 +85,7 @@ balance(struct spdk_scheduler_core_info *cores, int core_count, struct spdk_gove
 			SPDK_ERRLOG("failed to get capabilities for core: %u\n", core->lcore);
 			return;
 		}
+		//printf("spdk_gscheduler\n");
 
 		if (core->total_busy_tsc < (core->total_idle_tsc / 1000)) {
 			rc = governor->set_core_freq_min(core->lcore);

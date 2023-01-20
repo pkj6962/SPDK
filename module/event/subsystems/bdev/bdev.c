@@ -43,6 +43,7 @@
 static void
 bdev_initialize_complete(void *cb_arg, int rc)
 {
+	
 	spdk_subsystem_init_next(rc);
 }
 

@@ -432,6 +432,7 @@ nvmf_tgt_advance_state(void)
 			break;
 		}
 		case NVMF_TGT_RUNNING:
+			SPDK_NOTICELOG("This line printed?\n"); 
 			spdk_subsystem_init_next(0);
 			break;
 		case NVMF_TGT_FINI_STOP_SUBSYSTEMS: {
@@ -460,6 +461,7 @@ nvmf_tgt_advance_state(void)
 			spdk_subsystem_fini_next();
 			return;
 		case NVMF_TGT_ERROR:
+			SPDK_NOTICELOG("B\n"); 
 			spdk_subsystem_init_next(rc);
 			return;
 		}

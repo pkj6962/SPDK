@@ -60,6 +60,13 @@ extern "C" {
  */
 #define SPDK_BDEV_BUF_SIZE_WITH_MD(x)	(((x) / 512) * (512 + 16))
 
+
+#define LEVEL1_BUCKET_SIZE 16
+#define LEVEL2_BUCKET_SIZE 4096
+
+// extern pthread_mutex_t bucket_lock[LEVEL1_BUCKET_SIZE][LEVEL2_BUCKET_SIZE]; 
+// extern int temp; 
+
 /** Asynchronous event type */
 enum spdk_bdev_event_type {
 	SPDK_BDEV_EVENT_REMOVE,
@@ -915,6 +922,11 @@ int spdk_bdev_readv_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_c
  * 추가 함수
  * chunk하는 함수
 **/
+
+
+
+
+
 int bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		    void *buf, uint64_t offset, uint64_t nbytes,
 		    spdk_bdev_io_completion_cb cb, void *cb_arg);
@@ -934,6 +946,16 @@ int bdev_fingerprint(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 int bdev_indexsearch(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		    void *buf, uint64_t offset, uint64_t nbytes,
 		    spdk_bdev_io_completion_cb cb, void *cb_arg, char *mdString);
+
+
+
+// int bdev_hash_insert(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, 
+// 				void *buf, struct _node * item, int level1_entry, int level2_entry, int cel, 
+// 				spdk_bdev_io_completion_cb cb, void *cb_arg); 
+
+
+
+
 /**
  * Submit a write request to the bdev on the given channel.
  *

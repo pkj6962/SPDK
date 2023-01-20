@@ -32,9 +32,9 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SPDK_LIB_DIR:$DPDK_LIB_DIR:$VFIO_LIB_DI
 #make -C $test_root clean
 
 # Make just the application linked against the combined SPDK shared library libspdk.so.
-#run_test "external_make_hello_no_bdev_shared_combo" make -C $test_root hello_world_no_bdev_shared_combo
-#run_test "external_run_hello_no_bdev_shared_combo" $test_root/hello_world/hello_bdev \
-#	--json $test_root/hello_world/bdev.json -b Malloc0
+# run_test "external_make_hello_no_bdev_shared_combo" make -C $test_root hello_world_no_bdev_shared_combo
+# run_test "external_run_hello_no_bdev_shared_combo" $test_root/hello_world/hello_bdev \
+# 	--json $test_root/hello_world/bdev.json -b Nvme0
 
 #make -C $test_root clean
 
@@ -45,16 +45,16 @@ run_test "external_run_hello_bdev_shared_iso" $test_root/hello_world/hello_bdev 
 
 #make -C $test_root clean
 
-# Make just the application linked against individual SPDK shared libraries.
-#run_test "external_make_hello_no_bdev_shared_iso" make -C $test_root hello_world_no_bdev_shared_iso
-#run_test "external_run_hello_no_bdev_shared_iso" $test_root/hello_world/hello_bdev \
-#	--json $test_root/hello_world/bdev.json -b Malloc0
+# # Make just the application linked against individual SPDK shared libraries.
+# run_test "external_make_hello_no_bdev_shared_iso" make -C $test_root hello_world_no_bdev_shared_iso
+# run_test "external_run_hello_no_bdev_shared_iso" $test_root/hello_world/hello_bdev \
+# 	--json $test_root/hello_world/bdev.json -b Malloc0
 
 #i Make the basic NVMe driver linked against individual shared SPDK libraries.
 #run_test "external_make_nvme_shared" make -C $test_root nvme_shared
 #run_test "external_run_nvme_shared" $test_root/nvme/identify.sh
 
-make -C $test_root clean
+# make -C $test_root clean
 
 #make -C $SPDK_DIR clean
 #$SPDK_DIR/configure --without-shared --without-isal --without-ocf --disable-asan
