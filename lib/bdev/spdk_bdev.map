@@ -59,8 +59,15 @@
 	spdk_bdev_readv_blocks;
 	spdk_bdev_readv_blocks_with_md;
 
+	bdev_addr_translate; 
 	bdev_hash_insert; 
+	link_versioned_data; 
+	bdev_hash_find; 
 
+	calc_hash_value;
+	bucket_lock_init;
+	init_item; 
+	
 	bdev_add_translate;
 	bdev_add_search;
 	bdev_chunk;

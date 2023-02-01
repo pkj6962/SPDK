@@ -1,0 +1,83 @@
+bdev.o: bdev.c /home/junghwan/repo/spdk/include/spdk/stdinc.h \
+ /home/junghwan/repo/spdk/include/spdk/bdev.h \
+ /home/junghwan/repo/spdk/include/spdk/scsi_spec.h \
+ /home/junghwan/repo/spdk/include/spdk/assert.h \
+ /home/junghwan/repo/spdk/include/spdk/nvme_spec.h \
+ /home/junghwan/repo/spdk/include/spdk/json.h \
+ /home/junghwan/repo/spdk/include/spdk/queue.h \
+ /home/junghwan/repo/spdk/include/spdk/queue_extras.h \
+ /home/junghwan/repo/spdk/include/spdk/histogram_data.h \
+ /home/junghwan/repo/spdk/include/spdk/dif.h \
+ /home/junghwan/repo/spdk/include/spdk/config.h \
+ /home/junghwan/repo/spdk/include/spdk/env.h \
+ /home/junghwan/repo/spdk/include/spdk/pci_ids.h \
+ /home/junghwan/repo/spdk/include/spdk/thread.h \
+ /home/junghwan/repo/spdk/include/spdk/cpuset.h \
+ /home/junghwan/repo/spdk/include/spdk/likely.h \
+ /home/junghwan/repo/spdk/include/spdk/notify.h \
+ /home/junghwan/repo/spdk/include/spdk/util.h \
+ /home/junghwan/repo/spdk/include/spdk/trace.h \
+ /home/junghwan/repo/spdk/include/spdk/tree.h \
+ /home/junghwan/repo/spdk/include/spdk_internal/thread.h \
+ /home/junghwan/repo/spdk/include/spdk/bdev_module.h \
+ /home/junghwan/repo/spdk/include/spdk/bdev_zone.h \
+ /home/junghwan/repo/spdk/include/spdk/uuid.h \
+ /home/junghwan/repo/spdk/include/spdk/log.h \
+ /home/junghwan/repo/spdk/include/spdk/string.h bdev_internal.h \
+ /home/junghwan/repo/spdk/include/spdk/bit_array.h
+
+/home/junghwan/repo/spdk/include/spdk/stdinc.h:
+
+/home/junghwan/repo/spdk/include/spdk/bdev.h:
+
+/home/junghwan/repo/spdk/include/spdk/scsi_spec.h:
+
+/home/junghwan/repo/spdk/include/spdk/assert.h:
+
+/home/junghwan/repo/spdk/include/spdk/nvme_spec.h:
+
+/home/junghwan/repo/spdk/include/spdk/json.h:
+
+/home/junghwan/repo/spdk/include/spdk/queue.h:
+
+/home/junghwan/repo/spdk/include/spdk/queue_extras.h:
+
+/home/junghwan/repo/spdk/include/spdk/histogram_data.h:
+
+/home/junghwan/repo/spdk/include/spdk/dif.h:
+
+/home/junghwan/repo/spdk/include/spdk/config.h:
+
+/home/junghwan/repo/spdk/include/spdk/env.h:
+
+/home/junghwan/repo/spdk/include/spdk/pci_ids.h:
+
+/home/junghwan/repo/spdk/include/spdk/thread.h:
+
+/home/junghwan/repo/spdk/include/spdk/cpuset.h:
+
+/home/junghwan/repo/spdk/include/spdk/likely.h:
+
+/home/junghwan/repo/spdk/include/spdk/notify.h:
+
+/home/junghwan/repo/spdk/include/spdk/util.h:
+
+/home/junghwan/repo/spdk/include/spdk/trace.h:
+
+/home/junghwan/repo/spdk/include/spdk/tree.h:
+
+/home/junghwan/repo/spdk/include/spdk_internal/thread.h:
+
+/home/junghwan/repo/spdk/include/spdk/bdev_module.h:
+
+/home/junghwan/repo/spdk/include/spdk/bdev_zone.h:
+
+/home/junghwan/repo/spdk/include/spdk/uuid.h:
+
+/home/junghwan/repo/spdk/include/spdk/log.h:
+
+/home/junghwan/repo/spdk/include/spdk/string.h:
+
+bdev_internal.h:
+
+/home/junghwan/repo/spdk/include/spdk/bit_array.h:

@@ -519,3 +519,48 @@ spdk_bit_pool_free_all_bits(struct spdk_bit_pool *pool)
 	pool->lowest_free_bit = 0;
 	pool->free_count = spdk_bit_array_capacity(pool->array);
 }
+
+int 
+spdk_bit_array_find_consecutive_clear(const struct spdk_bit_array *ba, int cnt)
+{
+	
+	int next_idx = 0, target_idx; 
+	bool false_flag;
+
+	while(1)
+	{
+		false_flag = false;
+		target_idx = spdk_bit_array_find_first_clear(ba, next_idx);
+		for (int i = 0; i < cnt; i++)
+		{
+			if (spdk_bit_array_get (ba, target_idx + i) == true) // fail
+			{
+				next_idx = target_idx + i;			 
+				false_flag = true; 
+				break; 
+			} 
+		}
+		if (false_flag == true)
+			continue;
+		else
+			return target_idx; 
+	}
+}
+
+void 
+spdk_bit_array_consecutive_clear(struct spdk_bit_array *ba, uint32_t start_idx, int cnt)
+{
+	for(int i = 0; i < cnt; i++)
+	{
+		spdk_bit_array_clear(ba, start_idx + i); 
+	}
+}
+
+void 
+spdk_bit_array_consecutive_set(struct spdk_bit_array *ba, uint32_t start_idx, int cnt)
+{
+	for(int i = 0; i < cnt; i++)
+	{
+		spdk_bit_array_set(ba, start_idx + i); 
+	}
+}

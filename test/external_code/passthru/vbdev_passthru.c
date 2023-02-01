@@ -351,6 +351,9 @@ vbdev_passthru_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *b
 		if (bdev_io->u.bdev.md_buf == NULL) {
 			printf("write passthru 1\n");
 			//printf("bdev name, channel:%s,%s\n",bdev_io->bdev->name, spdk_io_channel_get_io_device_name(ch));
+			
+			printf("%s\n", bdev_io->u.bdev.iovs); 
+			
 			rc = spdk_bdev_writev_blocks(pt_node->base_desc, pt_ch->base_ch, bdev_io->u.bdev.iovs,
 						     bdev_io->u.bdev.iovcnt, bdev_io->u.bdev.offset_blocks,
 						     bdev_io->u.bdev.num_blocks, _pt_complete_io,

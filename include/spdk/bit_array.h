@@ -196,6 +196,15 @@ void spdk_bit_array_load_mask(struct spdk_bit_array *ba, const void *mask);
  */
 void spdk_bit_array_clear_mask(struct spdk_bit_array *ba);
 
+
+int spdk_bit_array_find_consecutive_clear(const struct spdk_bit_array *ba, int cnt); 
+void spdk_bit_array_consecutive_clear(struct spdk_bit_array *ba, uint32_t start_idx, int cnt);
+void spdk_bit_array_consecutive_set(struct spdk_bit_array *ba, uint32_t start_idx, int cnt); 
+
+
+
+
+
 #ifdef __cplusplus
 }
 #endif

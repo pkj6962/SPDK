@@ -61,6 +61,8 @@
 #include "stdio.h"
 #include "stdlib.h"
 
+#include "spdk/bit_array.h"
+
 #ifdef SPDK_CONFIG_VTUNE
 #include "ittnotify.h"
 #include "ittnotify_types.h"
@@ -98,6 +100,9 @@ int __itt_init_ittlib(const char *, __itt_group_id);
  */
 #define SPDK_BDEV_MAX_CHILDREN_UNMAP_WRITE_ZEROES_REQS (8)
 
+#define FIRST_VERSION 1 
+#define DISK_SIZE_BY_PAGE 1000000
+
 
 /* 추가 : for hash *//*
 static struct rte_hash_parameters ut_params = {
@@ -106,8 +111,6 @@ static struct rte_hash_parameters ut_params = {
 	.hash_func = rte+jhash,
 	.hash_func_init_val = 0,
 	.socket_id = 0,
-};*/
-
 
 struct spdk_io_channel *chh= NULL;
 
@@ -116,7 +119,12 @@ struct _node{
 		int address;
 		int hash;
 		struct _node *next;
+		struct _node * next_version;
+		struct _node * previous_version; 
+		
+		int version; 
 };
+
 	
 struct arrayitem
 {
@@ -130,7 +138,11 @@ struct arrayitem *array2 = NULL;
 struct arrayitem *array3 = NULL;
 struct arrayitem *array4 = NULL;
 
+/*
 
+struct spdk_bit_array * bitmap; 
+
+*/
 
 #define LEVEL1_BUCKET_SIZE 16
 #define LEVEL2_BUCKET_SIZE 4096
@@ -168,6 +180,10 @@ bdev_name_cmp(struct spdk_bdev_name *name1, struct spdk_bdev_name *name2)
 {
 	return strcmp(name1->name, name2->name);
 }
+
+
+struct bit_array *bitmap_disk; 
+
 
 RB_GENERATE_STATIC(bdev_name_tree, spdk_bdev_name, node, bdev_name_cmp);
 
@@ -4160,7 +4176,7 @@ bdev_write_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *c
 
 
 int 
-bdev_hash_insert(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, void *buf, struct _node * item, int level1_entry, int level2_entry, int cel,  spdk_bdev_io_completion_cb cb, void *cb_arg)
+bdev_hash_insert(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, void *buf, struct _node * item, int level1_entry, int level2_entry, int block_cnt,  spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
 	int rc;
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
@@ -4168,73 +4184,159 @@ bdev_hash_insert(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, void *
 	assert (level1_entry < LEVEL1_BUCKET_SIZE); 
 	assert (level2_entry < LEVEL2_BUCKET_SIZE); 
 
-	static int print_cnt = 0; 
+
 
 	pthread_mutex_lock (&bdev->internal.mutex); 
-	pthread_mutex_lock (&bucket_lock[level1_entry][level2_entry]); 
+	// pthread_mutex_lock (&bucket_lock[level1_entry][level2_entry]); 
+
 	if (hashCollisionCheck[level1_entry][level2_entry] == false) // it is the first time to insert the item into the level2 bucket.
 	{
 		assert (item != NULL);
 
 		hashCollisionCheck[level1_entry][level2_entry] = true; 
-		// if (bucket[level1_entry] == NULL) // it is the first time to insert the item into the level1 bucket. 
-		// {
-		// 	bucket[level1_entry] = (struct arrayitem *)malloc(LEVEL2_BUCKET_SIZE * sizeof(struct arrayitem)); 
-		// 	if (bucket[level1_entry] == NULL)
-		// 		SPDK_ERRLOG("Memory allocation failed.\n"); 
-		// }
+	
 		bucket[level1_entry][level2_entry].head = item; 
 		bucket[level1_entry][level2_entry].tail = item; 
 		
+		pthread_mutex_unlock (&bdev->internal.mutex); 
+		//pthread_mutex_unlock(&bucket_lock[level1_entry][level2_entry]); 
 	}
 	else // Hash collision occured, so we insert the item in a chaining hash manner.  
 	{
 		struct _node * temp = bucket[level1_entry][level2_entry].head; 
+		struct _node * last = NULL; 
+
+		pthread_mutex_unlock (&bdev->internal.mutex); 
+		// pthread_mutex_unlock (&bucket_lock[level1_entry][level2_entry]); 
 		while (temp != NULL)
 		{
 			if (temp->hash == item->hash)
 			{
 				
-				// if (print_cnt == 0)
-				// {
-				// 	print_cnt ++; 
-				// 	pthread_mutex_unlock (&bdev->internal.mutex); 
-				// 	return 0; 
-				// }
-				// rc = spdk_bdev_write(desc, ch, buf, temp->address * 4096, cel * 4096, cb, cb_arg); // overwrites the content. 
-				printf("buf: %s", buf); 
-				rc = spdk_bdev_write(desc, ch, buf, 0, 4096, cb, cb_arg); // overwrites the content. 
-				// rc = spdk_bdev_write(desc, ch, buf, temp->address * 4096, cel * 4096, cb, cb_arg); // overwrites the content. 
-				printf("write done\n"); 
-				if (rc)
-				{
-					SPDK_ERRLOG("Write Error\n"); 
-				}
-		
-				free(item); 
-				printf("Well inserted\n"); 
+
+				// rc = spdk_bdev_write(desc, ch, buf, temp->address * 4096, block_cnt * 4096, cb, cb_arg); // overwrites the content. 
+
+				pthread_mutex_lock (&bdev->internal.mutex); 
+				// pthread_mutex_unlock (&bucket_lock[level1_entry][level2_entry]); 
+
+				link_versioned_data (last, item, temp, &(bucket[level1_entry][level2_entry].head));
 				pthread_mutex_unlock (&bdev->internal.mutex); 
+				// pthread_mutex_unlock (&bucket_lock[level1_entry][level2_entry]); 
+
+				
+				// rc = spdk_bdev_write(desc, ch, buf, temp->address * 4096, block_cnt * 4096, cb, cb_arg); // overwrites the content. 
+				// if (rc)
+				// {
+				// 	SPDK_ERRLOG("Write Error\n"); 
+				// }
+						
 				return 0; 
 			}
+			last = temp; 
 			temp = temp->next; 
 		}
 		// LIFO 구조로 삽입 
+
+		pthread_mutex_lock (&bdev->internal.mutex); 
+		// pthread_mutex_lock (&bucket_lock[level1_entry][level2_entry]); 
+
 		bucket[level1_entry][level2_entry].tail->next = item;
 		bucket[level1_entry][level2_entry].tail = item; 
+		pthread_mutex_unlock (&bdev->internal.mutex); 
+		// pthread_mutex_unlock (&bucket_lock[level1_entry][level2_entry]); 
+
 		// temp = bucket[level1_entry][level2_entry].head; 
 		// bucket[level1_entry][level2_entry].head = item; 
 		// item->next = temp ; 
 	}
-	pthread_mutex_unlock (&bdev->internal.mutex); 
-
-	// pthread_mutex_unlock(&bucket_lock[level1_entry][level2_entry]); 
 
 
-	printf("Well inserted\n"); 
+	// cb (cb_arg, true, cb_arg); 
 	return 0; 
 }
 
 
+int bdev_addr_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		void *buf, uint64_t offset, uint64_t nbytes,
+		spdk_bdev_io_completion_cb cb, void *cb_arg)
+{
+	static bool init_flag = true; 
+	int free_idx, hash, block_cnt, level1_bucket_entry, level2_bucket_entry; 
+	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
+
+	hash = calc_hash_value(offset); 
+
+	if(init_flag)
+	{
+		bucket_lock_init(); 
+		bitmap_disk = spdk_bit_array_create(DISK_SIZE_BY_PAGE); 
+		init_flag = false; 
+	}
+
+	block_cnt = nbytes / 512 + 1; 
+	level1_bucket_entry = hash & 0b1111; 
+	level2_bucket_entry = (hash & 0xFFF0) >>  4; 
+
+    struct _node *item = (struct _node*)spdk_malloc(sizeof(struct _node), 0, NULL, SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA);       
+	if (item == NULL)
+		SPDK_ERRLOG("Memory Allocation Failed.\n"); 
+	init_item(item, hash); 
+
+	bdev_hash_insert(desc, ch, buf, item, level1_bucket_entry, level2_bucket_entry, block_cnt, cb, cb_arg); 
+
+	pthread_mutex_lock(&bdev->internal.mutex); 
+
+	free_idx = spdk_bit_array_find_consecutive_clear(bitmap_disk, block_cnt); 
+	spdk_bit_array_consecutive_set (bitmap_disk, free_idx, block_cnt); 
+	item->address = free_idx; 
+
+	pthread_mutex_unlock(&bdev->internal.mutex); 
+
+	rc = spdk_bdev_write(desc, ch, buf, (item->address)*4096,block_cnt*4096,cb, cb_arg);
+
+	return 0; 
+}
+
+void init_item (struct _node * item, int hash)
+{
+	item->hash = hashint;
+	item->next = NULL;
+	item->next_version = NULL;
+	item->previous_version = NULL;	
+    item->version = FIRST_VERSION; 
+}
+
+
+void bucket_lock_init (void)
+{
+	for (int i = 0; i < LEVEL1_BUCKET_SIZE; i++)
+	{
+		for (int j = 0; j < LEVEL2_BUCKET_SIZE; j++)
+		{
+			pthread_mutex_init (&bucket_lock[i][j], NULL);
+							first_data_inserted_flag[i][j] = true;  
+		}
+	}
+}
+
+int calc_hash_value(int key)
+{
+	uint64_t *pi; 
+	int hash; 
+	unsigned char digest[SHA_DIGEST_LENGTH];
+	char mdString[10];
+	char string[512];
+
+	sprintf(string,"%ld", key);
+	SHA1((unsigned char*)string, strlen(string), (unsigned char*)&digest);
+	for(int ii=0;ii<SHA_DIGEST_LENGTH/5;ii++){
+		sprintf(&mdString[ii*2], "%02x", (unsigned int)digest[ii]);
+	}
+	pi = (int*)mdString;
+	hash = *pi; 
+
+	return hash; 
+}
 
 
 int
@@ -4242,7 +4344,7 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		void *buf, uint64_t offset, uint64_t nbytes,
 		spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
-	int bit=0, cel = 0,t = 0,ii=0, tb=0;
+	int bit=0, block_cnt = 0,t = 0,ii=0, tb=0;
 	int a=0, b = 0,i=0,j=0,num=0, bucket=0,has=0;
 	uint64_t *pi;
 	uint64_t hash1 = 0;
@@ -4265,28 +4367,30 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	}
 	pi = (int*)mdString;
 
+	
 
 
-	static bool init_flag = false;
 
-	if (!init_flag) 
+	static bool init_flag = true;
+        static bool first_data_inserted_flag[LEVEL1_BUCKET_SIZE][LEVEL2_BUCKET_SIZE] = {true}; 
+	if (init_flag) 
 	{
-		init_flag = true; 
+		init_flag = false; 
 		for (int i = 0; i < LEVEL1_BUCKET_SIZE; i++)
 		{
 			for (int j = 0; j < LEVEL2_BUCKET_SIZE; j++)
 			{
-				pthread_mutex_init (&bucket_lock[i][j], NULL); 
+				pthread_mutex_init (&bucket_lock[i][j], NULL);
+                                first_data_inserted_flag[i][j] = true;  
 			}
 		}
+
+		bitmap_disk = spdk_bit_array_create(DISK_SIZE_BY_PAGE); 
 	}
 
-
-
-
-
+ 
 	/************************ HASH TABLE 삽입****************************/
-	cel = nbytes/512+1;
+	block_cnt = nbytes/512+1;
 	hashint = *pi;
 	has = hashint & 0b1111; // level1_bucket_entry로 개명 
 	entry = (hashint & 0xFFF0)/16; // level2_bucket_entry 로 개명
@@ -4295,307 +4399,406 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	int level2_bucket_entry = (hashint & 0xFFF0) >>  4; 
 
 	//node 할당 및 초기화
-	struct _node *item = (struct _node*)malloc(sizeof(struct _node));
+//	struct _node *item = (struct _node*)malloc(sizeof(struct _node));
+        struct _node *item = (struct _node*)spdk_malloc(sizeof(struct _node), 0, NULL, SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA);       
 	if (item == NULL)
 		SPDK_ERRLOG("Memory Allocation Failed.\n"); 
 	item->hash = hashint;
 	item->next = NULL;
+	item->next_version = NULL;
+	item->previous_version = NULL;	
 	item->address = 0;
-	static int print_cnt = 0; 
+        item->version = FIRST_VERSION; 
+	
 
-	// bdev_hash_insert(desc, ch, buf, item, level1_bucket_entry, level2_bucket_entry, cel, cb, cb_arg); 
+	bdev_hash_insert(desc, ch, buf, item, level1_bucket_entry, level2_bucket_entry, block_cnt, cb, cb_arg); 
 
-	printf("has: %d entry: %d\n", has, entry); 
+// 	printf("has: %d entry: %d\n", has, entry); 
+
+//         //bool first_data_inserted_flag = true; 
+// 	if(has==0 || has==5){
+
+// 		pthread_mutex_lock(&bucket_lock[0][entry]); 
+// 		// pthread_mutex_lock(&bdev->internal.mutex);
+// 		if (arraycheck[entry] == 0){
+// 			arraycheck[entry] = 1;
+// 			if (array_ == NULL){
+// 				// array_ = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem));
+// 				array_ = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+// 			}
+// 			array_[entry].head = item;
+// 			array_[entry].tail = item;
+// 		        item->version = FIRST_VERSION; 
+                        
+// 			pthread_mutex_unlock(&bucket_lock[0][entry]); 
+// 			// pthread_mutex_unlock(&bdev->internal.mutex);
+// 		}
+// 		else{//entry에 가장먼저 진입하지 않고, 
+// 			// pthread_mutex_unlock(&bdev->internal.mutex);
+
+// 			struct _node *temp = array_[entry].head;
+// 			struct _node * last = NULL; 
 
 
-	if(has==0 || has==5){
+// 			pthread_mutex_unlock(&bucket_lock[0][entry]); 
+// 			while(temp != NULL){
+// 				if(temp->hash==item->hash){//이미 존재하는 hash node인 경우
+// 					// printf("H___________________2,7write-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
+					
+// 					pthread_mutex_lock(&bucket_lock[0][entry]); 
+			              
+//                                         first_data_inserted_flag[0][entry] = false; 		
+                                      
+//                                         link_versioned_data (last, item, temp, &(array_[entry].head));
+// 				//	item->address = temp->address; 
 
-		pthread_mutex_lock(&bucket_lock[has][entry]); 
-		// pthread_mutex_lock(&bdev->internal.mutex);
-		if (arraycheck[entry] == 0){
-			arraycheck[entry] = 1;
-			if (array_ == NULL){
-				array_ = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
-			}
-			array_[entry].head = item;
-			array_[entry].tail = item;
+// 					pthread_mutex_unlock(&bucket_lock[0][entry]); 
+
+// 				//	rc = spdk_bdev_write(desc,ch,buf,temp->address*4096,block_cnt*4096,cb,cb_arg);
+
+
+// 				//	printf("print count: %d\n", print_cnt ++); 
+// 					for(int k=0;k<block_cnt;k++){
+// 							//rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
+// 					}
+// 					if(rc == 0 ){
+// 						//printf("*****journal start*****\n");
+
+// 						//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,block_cnt*4096,cb,cb_arg);
+// 						//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
+// 					}
+// 					// free(item);
+// 					//return 0;
+//                                         break; 
+// 				}
+// 				last = temp;
+// 				temp = temp->next;
+
+// 			}
+// 			//존재하는 hash node 없는 경우
+// 			// pthread_mutex_lock(&bdev->internal.mutex);
+// 			pthread_mutex_lock(&bucket_lock[0][entry]); 
+// 			if (first_data_inserted_flag[0][entry] == true){
+//                                 item->version = FIRST_VERSION; 
+// 			        array_[entry].tail->next = item;
+// 			        array_[entry].tail = item;
+//                         }       
+//                         pthread_mutex_unlock(&bucket_lock[0][entry]);
+                         
+// 			//pthread_mutex_unlock(&bdev->internal.mutex);
+// 		}
+// 	}
+// 	else if(has==1 ||has==6){
+
+// 			// pthread_mutex_lock(&bdev->internal.mutex);
+// 			pthread_mutex_lock(&bucket_lock[1][entry]); 
+
+// 			if(arraycheck1[entry] == 0){
+// 				arraycheck1[entry] = 1;
+// 				if(array1 == NULL){
+// 					array1 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+// 					// array1 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem));
+// 				}
+// 				array1[entry].head = item;
+// 				array1[entry].tail = item;
+// 				item->version = FIRST_VERSION; 
+//                                 pthread_mutex_unlock(&bucket_lock[1][entry]); 
+// 				// pthread_mutex_unlock(&bdev->internal.mutex);
+
+// 			}
+// 		else{//entry에 가장먼저 진입하지 않고, 
+// 			// pthread_mutex_unlock(&bdev->internal.mutex);
+
+// 			struct _node *temp = array1[entry].head;
+// 			struct _node * last = NULL; 
+
+// 			pthread_mutex_unlock(&bucket_lock[1][entry]); 
+// 			while(temp != NULL){
+// 				if(temp->hash==item->hash){//이미 존재하는 hash node인 경우
+// 		// printf("H___________________2,7write-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
+// 					pthread_mutex_lock(&bucket_lock[1][entry]); 					
+// 					first_data_inserted_flag[1][entry] = false; 
+
+//                                         link_versioned_data (last, item, temp, &(array1[entry].head));
+// 					//item->address = temp->address; 				
+// 					pthread_mutex_unlock(&bucket_lock[1][entry]); 
+
+
+// 					//rc = spdk_bdev_write(desc,ch,buf,temp->address*4096,block_cnt*4096,cb,cb_arg);
+					
+
+// 					for(int k=0;k<block_cnt;k++){
+// 					//	rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
+// 					}
+// 					if(rc==0){
+// 						//printf("journal start\n");
+// 						//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,block_cnt*4096,cb,cb_arg);
+
+// 						//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
+// 					}
+// 					// free(item);
+// 					//return 0;
+//                                         break;  
+// 				}
+// 				last = temp; 
+// 				temp = temp->next;
+// 			}
+// 		pthread_mutex_lock(&bucket_lock[1][entry]); 
+// 		// pthread_mutex_lock(&bdev->internal.mutex);
+//                 if (first_data_inserted_flag[1][entry] == true){
+// 		        item->version = FIRST_VERSION; 
+// 		        array1[entry].tail->next = item;
+// 		        array1[entry].tail = item;
+//                 }
+// 		// pthread_mutex_unlock(&bdev->internal.mutex);
+// 		pthread_mutex_unlock(&bucket_lock[1][entry]); 
+
+// 	}
+// 	}
+// 	else if(has == 2 || has == 7){
+// 			//printf("2,7 has:%d,key:%d\n",has,hashint);
+// 			pthread_mutex_lock(&bucket_lock[2][entry]); 
+// 			// pthread_mutex_lock(&bdev->internal.mutex);
+// 			if(arraycheck2[entry] == 0){
+// 			arraycheck2[entry] = 1;
+// 			if(array2 == NULL){
+// 				array2 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+// 				// array2 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem));
+			
+// 			}
+// 			array2[entry].head = item;
+// 			array2[entry].tail = item;
+// 			item->version = FIRST_VERSION;  
+// 			// pthread_mutex_unlock(&bdev->internal.mutex);
+// 			pthread_mutex_unlock(&bucket_lock[2][entry]); 
+
+// 			}
+// 			else{//entry에 가장먼저 진입하지 않고, 
+// 					// pthread_mutex_unlock(&bdev->internal.mutex);
+
+// 					struct _node * temp = array2[entry].head;
+// 					struct _node * last = NULL; 
+
+// 					pthread_mutex_unlock(&bucket_lock[2][entry]); 
+// 					while(temp != NULL){
+// 						if(temp->hash==item->hash){//이미 존재하는 hash node인 경우
+// 							// printf("H___________________2,7write-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
+// 							pthread_mutex_lock(&bucket_lock[2][entry]); 
+// 							first_data_inserted_flag[2][entry] = false;
+
+//                                                         link_versioned_data (last, item, temp, &(array2[entry].head));
+// 							//item->address = temp->address; 
+			
+// 							pthread_mutex_unlock(&bucket_lock[2][entry]); 
 		
-			pthread_mutex_unlock(&bucket_lock[has][entry]); 
-			// pthread_mutex_unlock(&bdev->internal.mutex);
-		}
-		else{//entry에 가장먼저 진입하지 않고, 
-			// pthread_mutex_unlock(&bdev->internal.mutex);
-			pthread_mutex_unlock(&bucket_lock[has][entry]); 
+// 							//rc = spdk_bdev_write(desc,ch,buf,temp->address*4096,block_cnt*4096,cb,cb_arg);
+// 							for(int k=0;k<block_cnt;k++){
+// 							//	rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
+// 							}
+// 							if(rc == 0){
+// 								//printf("journal start\n");
+// 								//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,block_cnt*4096,cb,cb_arg);
 
-			struct _node *tem = array_[entry].head;
-			while(tem!=NULL){
-				if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
-					// printf("H___________________0,5write-hashint:%X,:has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
-					rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
+// 								//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
+// 							}
+// 							// free(item);
+// 							//return 0;
+//                                                         break;
+// 						}
+// 						last = temp; 
+// 						temp = temp->next;
+// 					}
+// 				//존재하는 hash node 없는 경우
+// 				pthread_mutex_lock(&bucket_lock[2][entry]); 		
+// 				// pthread_mutex_lock(&bdev->internal.mutex);
+//                                 if(first_data_inserted_flag[2][entry] == true){
+//                                         item->version = FIRST_VERSION; 
+// 				        array2[entry].tail->next = item;
+// 				        array2[entry].tail = item;
+// 				// pthread_mutex_unlock(&bdev->internal.mutex);
+//                                 }
+//                                 pthread_mutex_unlock(&bucket_lock[2][entry]); 
 
-					printf("print count: %d\n", print_cnt ++); 
-					for(int k=0;k<cel;k++){
-							//rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
-					}
-					if(rc == 0 ){
-						//printf("*****journal start*****\n");
+// 			}
+// 	}
+// 	else if(has==3 || has==8){
+// 			//printf("3,8 has:%d,key:%d\n",has,hashint);
+// 		// pthread_mutex_lock(&bdev->internal.mutex);
+// 			pthread_mutex_lock(&bucket_lock[3][entry]); 
+// 			if(arraycheck3[entry] == 0){
+// 				arraycheck3[entry] = 1;
+// 				if(array3 == NULL){
+// 					array3 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+// 					// array3 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem));
+// 				}
+// 				array3[entry].head = item;
+// 				array3[entry].tail = item;
+// 				item->version = FIRST_VERSION; 
+//                                 // pthread_mutex_unlock(&bdev->internal.mutex);
+// 				pthread_mutex_unlock(&bucket_lock[3][entry]); 
+// 			}	
+// 			else{//entry에 가장먼저 진입하지 않고, 			
+// 				// pthread_mutex_unlock(&bdev->internal.mutex);
+// 				struct _node *temp = array3[entry].head;
+// 				struct _node * last = NULL; 
 
-						//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-						//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
-					}
-					free(item);
-					return 0;
-				}
-				tem = tem->next;
-			}
-			//존재하는 hash node 없는 경우
-			// pthread_mutex_lock(&bdev->internal.mutex);
-			pthread_mutex_lock(&bucket_lock[has][entry]); 
-			array_[entry].tail->next = item;
-			array_[entry].tail = item;
-			pthread_mutex_unlock(&bucket_lock[has][entry]); 
-			// pthread_mutex_unlock(&bdev->internal.mutex);
+// 				pthread_mutex_unlock(&bucket_lock[3][entry]); 
+// 				while(temp != NULL)
+// 				{
+// 					if(temp->hash==item->hash){//이미 존재하는 hash node인 경우
+// 						// printf("H___________________2,7write-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
+// 						pthread_mutex_lock(&bucket_lock[3][entry]); 					
+// 						first_data_inserted_flag[3][entry] = false; 
+                                                
+//                                                 link_versioned_data (last, item, temp, &(array3[entry].head));
+// 					//	item->address = temp->address; 
+			
+// 						pthread_mutex_unlock(&bucket_lock[3][entry]); 
+						
+// 					//	rc = spdk_bdev_write(desc,ch,buf,temp->address*4096,block_cnt*4096,cb,cb_arg);
+// 					for(int k=0;k<block_cnt;k++){
+// 						//	rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
+// 						}
+// 						if(rc == 0){
+// 						//printf("journal start\n");
+// 							//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,block_cnt*4096,cb,cb_arg);
+// 							//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
+// 						}
+// 						// free(item);
+// 					//	return 0;
+//                                                 break;
+// 					}
+// 					last = temp; 
+// 					temp = temp->next;
+// 				}
+// 		//존재하는 hash node 없는 경우
+// 				pthread_mutex_lock(&bucket_lock[3][entry]); 
+// 				// pthread_mutex_lock(&bdev->internal.mutex);
+//                                 if (first_data_inserted_flag[3][entry] == true){
+// 				        item->version = FIRST_VERSION; 
+// 				        array3[entry].tail->next = item;
+// 				        array3[entry].tail = item;
+//                                 }
+// 				// pthread_mutex_unlock(&bdev->internal.mutex);
+// 				pthread_mutex_unlock(&bucket_lock[3][entry]); 
 
-		}
-	}
-	else if(has==1 ||has==6){
+// 	}
+// 	}
+// 	else{
+// 		pthread_mutex_lock(&bucket_lock[4][entry]); 
+// 		// pthread_mutex_lock(&bdev->internal.mutex);
+// 			if (arraycheck4[entry] == 0){
+// 				arraycheck4[entry] = 1;
+// 				if(array4 == NULL){
+// 					array4 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
+// 					// array4 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem));
+// 				}
+// 				array4[entry].head = item;
+// 				array4[entry].tail = item;
+// 				item->version = FIRST_VERSION; 
+//                                 // pthread_mutex_unlock(&bdev->internal.mutex);
+// 				pthread_mutex_unlock(&bucket_lock[4][entry]); 
+// 			}
+// 			else{//entry에 가장먼저 진입하지 않고, 
+// 				// pthread_mutex_unlock(&bdev->internal.mutex);
+// 				struct _node *temp = array4[entry].head;
+// 				struct _node * last = NULL; 
 
-			// pthread_mutex_lock(&bdev->internal.mutex);
-			pthread_mutex_lock(&bucket_lock[has][entry]); 
 
-			if(arraycheck1[entry] == 0){
-				arraycheck1[entry] = 1;
-				if(array1 == NULL){
-					array1 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
-				}
-				array1[entry].head = item;
-				array1[entry].tail = item;
-				pthread_mutex_unlock(&bucket_lock[has][entry]); 
-				// pthread_mutex_unlock(&bdev->internal.mutex);
+// 				pthread_mutex_unlock(&bucket_lock[4][entry]); 
+// 				while(temp != NULL){
+// 					if(temp->hash==item->hash){//이미 존재하는 hash node인 경우
+// 						// printf("H___________________2,7write-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
+// 						pthread_mutex_lock(&bucket_lock[4][entry]); 					
+// 					        first_data_inserted_flag[4][entry] = false; 
 
-			}
-		else{//entry에 가장먼저 진입하지 않고, 
-			// pthread_mutex_unlock(&bdev->internal.mutex);
-			pthread_mutex_unlock(&bucket_lock[has][entry]); 
+//                         link_versioned_data (last, item, temp, &(array4[entry].head));
+// 					//	item->address = temp->address; 
+// 						pthread_mutex_unlock(&bucket_lock[4][entry]); 
+						
+// 						//rc = spdk_bdev_write(desc,ch,buf,temp->address*4096,block_cnt*4096,cb,cb_arg);
 
-			struct _node *tem = array1[entry].head;
-			while(tem!=NULL){
-				if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
-					// printf("H_________________1,6write-hashint:%X,:has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
-					rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-					printf("print count: %d\n", print_cnt ++); 
-
-					for(int k=0;k<cel;k++){
-					//	rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
-					}
-					if(rc==0){
-						//printf("journal start\n");
-						//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-
-						//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
-					}
-					free(item);
-					return 0;
-				}
-				tem = tem->next;
-			}
-		pthread_mutex_lock(&bucket_lock[has][entry]); 
-		// pthread_mutex_lock(&bdev->internal.mutex);
-		array1[entry].tail->next = item;
-		array1[entry].tail = item;
-		// pthread_mutex_unlock(&bdev->internal.mutex);
-		pthread_mutex_unlock(&bucket_lock[has][entry]); 
-
-	}
-	}
-	else if(has == 2 || has == 7){
-			//printf("2,7 has:%d,key:%d\n",has,hashint);
-			pthread_mutex_lock(&bucket_lock[has][entry]); 
-			// pthread_mutex_lock(&bdev->internal.mutex);
-			if(arraycheck2[entry] == 0){
-			arraycheck2[entry] = 1;
-			if(array2 == NULL){
-				array2 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
-			}
-			array2[entry].head = item;
-			array2[entry].tail = item;
-			// pthread_mutex_unlock(&bdev->internal.mutex);
-			pthread_mutex_unlock(&bucket_lock[has][entry]); 
-
-	}
-			else{//entry에 가장먼저 진입하지 않고, 
-					// pthread_mutex_unlock(&bdev->internal.mutex);
-					pthread_mutex_unlock(&bucket_lock[has][entry]); 
-
-					struct _node *tem = array2[entry].head;
-					while(tem!=NULL){
-						if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
-							// printf("H___________________2,7write-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
-							rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-							printf("print count: %d\n", print_cnt ++); 					
-							for(int k=0;k<cel;k++){
-							//	rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
-							}
-							if(rc == 0){
-								//printf("journal start\n");
-								//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-
-								//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
-							}
-							free(item);
-							return 0;
-						}
-						tem = tem->next;
-					}
-				//존재하는 hash node 없는 경우
-				pthread_mutex_lock(&bucket_lock[has][entry]); 		
-				// pthread_mutex_lock(&bdev->internal.mutex);
-				array2[entry].tail->next = item;
-				array2[entry].tail = item;
-				// pthread_mutex_unlock(&bdev->internal.mutex);
-				pthread_mutex_unlock(&bucket_lock[has][entry]); 
-
-			}
-	}
-	else if(has==3 || has==8){
-			//printf("3,8 has:%d,key:%d\n",has,hashint);
-		// pthread_mutex_lock(&bdev->internal.mutex);
-			pthread_mutex_lock(&bucket_lock[has][entry]); 
-			if(arraycheck3[entry] == 0){
-				arraycheck3[entry] = 1;
-				if(array3 == NULL){
-					array3 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
-				}
-				array3[entry].head = item;
-				array3[entry].tail = item;
-				// pthread_mutex_unlock(&bdev->internal.mutex);
-				pthread_mutex_unlock(&bucket_lock[has][entry]); 
-			}	
-			else{//entry에 가장먼저 진입하지 않고, 			
-				// pthread_mutex_unlock(&bdev->internal.mutex);
-				pthread_mutex_unlock(&bucket_lock[has][entry]); 
-
-				struct _node *tem = array3[entry].head;
-				while(tem!=NULL){
-					if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
-						// printf("H_________________3,8write-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
-						rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-						printf("print count: %d\n", print_cnt ++); 
-
-						for(int k=0;k<cel;k++){
-						//	rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
-						}
-						if(rc == 0){
-						//printf("journal start\n");
-							//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-							//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
-						}
-						free(item);
-						return 0;
-					}
-					tem = tem->next;
-					}
-		//존재하는 hash node 없는 경우
-				pthread_mutex_lock(&bucket_lock[has][entry]); 
-				// pthread_mutex_lock(&bdev->internal.mutex);
-				array3[entry].tail->next = item;
-				array3[entry].tail = item;
-				// pthread_mutex_unlock(&bdev->internal.mutex);
-				pthread_mutex_unlock(&bucket_lock[has][entry]); 
-
-	}
-	}
-	else{
-		pthread_mutex_lock(&bucket_lock[has][entry]); 
-		// pthread_mutex_lock(&bdev->internal.mutex);
-			if (arraycheck4[entry] == 0){
-				arraycheck4[entry] = 1;
-				if(array4 == NULL){
-					array4 = (struct arrayitem*)malloc(4096*sizeof(struct arrayitem*));
-				}
-				array4[entry].head = item;
-				array4[entry].tail = item;
-				// pthread_mutex_unlock(&bdev->internal.mutex);
-				pthread_mutex_unlock(&bucket_lock[has][entry]); 
-			}
-			else{//entry에 가장먼저 진입하지 않고, 
-				// pthread_mutex_unlock(&bdev->internal.mutex);
-				pthread_mutex_unlock(&bucket_lock[has][entry]); 
-
-				struct _node *tem = array4[entry].head;
-				while(tem!=NULL){
-					if(tem->hash==item->hash){//이미 존재하는 hash node인 경우
-						// printf("H________________4,9write-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,tem->address);
-						rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-						printf("print count: %d\n", print_cnt ++); 
-
-						for(int k=0;k<cel;k++){
-						//rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
-						}
-						if(rc == 0){
-							//printf("journal start\n");
-							//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-							//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
-						}
-						free(item);
-						return 0;
-					}
-					tem = tem->next;
-				}
-		// 존재하는 hash node 없는 경우
-				pthread_mutex_lock(&bucket_lock[has][entry]); 
-				// pthread_mutex_lock(&bdev->internal.mutex);
-				array4[entry].tail->next = item;
-				array4[entry].tail = item;
-				// pthread_mutex_unlock(&bdev->internal.mutex);
-				pthread_mutex_unlock(&bucket_lock[has][entry]); 
+// 						for(int k=0;k<block_cnt;k++){
+// 						//rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
+// 						}
+// 						if(rc == 0){
+// 							//printf("journal start\n");
+// 							//rc = spdk_bdev_write(desc,ch,buf,tem->address*4096,block_cnt*4096,cb,cb_arg);
+// 							//bdev_journaling(desc,ch,buff,tem->address*4096,512,cb,cb_arg);
+// 						}
+// 						// free(item);
+// 						//return 0;
+//                                                 break;
+// 					}
+// 					last = temp; 
+// 					temp = temp->next;
+// 				}
+// 		// 존재하는 hash node 없는 경우
+// 				pthread_mutex_lock(&bucket_lock[4][entry]); 
+// 				// pthread_mutex_lock(&bdev->internal.mutex);
+				
+//                                 if (first_data_inserted_flag[4][entry] == true){
+                                
+//                                         item->version = FIRST_VERSION; 
+// 				        array4[entry].tail->next = item;
+// 				        array4[entry].tail = item;
+//                                 }
+// 				// pthread_mutex_unlock(&bdev->internal.mutex);
+// 				pthread_mutex_unlock(&bucket_lock[4][entry]); 
 
 	
-			}
-		}
-	/********************************************************************/
+// 			}
+// 		}
+// 	/********************************************************************/
 	
 
-	/************************ Page allocation ****************************/
+// 	/************************ Page allocation ****************************/
 	
-	//a = chec >> 5;
-	//b = chec & 31;
-	//if(){
+// 	//a = chec >> 5;
+// 	//b = chec & 31;
+// 	//if(){
 	t=0;
-	t= (1<<(cel))-1;
+	t= (1<<(block_cnt))-1;
 	// pthread_mutex_lock(&bdev->internal.mutex);
-	pthread_mutex_lock(&bucket_lock[has][entry]);
+	// pthread_mutex_lock(&bucket_lock[has][entry]);
+	pthread_mutex_lock(&bdev->internal.mutex); 
 
+	int free_idx; 
+	free_idx = spdk_bit_array_find_consecutive_clear(bitmap_disk, block_cnt); 
+	spdk_bit_array_consecutive_set (bitmap_disk, free_idx, block_cnt); 
+	item->address = free_idx; 
+
+	
+
+
+/*
 	a = chec >> 5;
 	b = chec & 31;
-	if((cel + b) > 32){
+	if((block_cnt + b) > 32){
 		bitvec[a] |= t<<b;
-		bitvec[a+1] |= (1<<(cel+b-32))-1;
-		//printf("P________________________f_bitvec[%d] = %X, bitvec[%d] = %X\n",a,bitvec[a],a+1,bitvec[a+1]);
+		bitvec[a+1] |= (1<<(block_cnt+b-32))-1;
 	}
 	else{
-		//printf("P_______________________normal:bitvec[a] =%X\n",bitvec[a]); 
 		bitvec[a] |= t<<b;
-		//printf("f_normal:bitvec[a] =%X\n",bitvec[a]); 
 	}
 	item->address = chec;
-	chec += cel;
-	//printf("chec:%d,cel:%d,a:%d,b:%d\n",chec,cel,a,b);
-	// pthread_mutex_unlock(&bdev->internal.mutex);
-	pthread_mutex_unlock(&bucket_lock[has][entry]);
+	chec += block_cnt;
+*/
+	pthread_mutex_unlock(&bdev->internal.mutex); 
+
 
 	//printf("P_____________________hashint:%X,write:has:%X,hash1:%X,address:%X\n",hashint,has,item->hash,item->address);
 	
-	rc = spdk_bdev_write(desc, ch, buf, (item->address)*4096,cel*4096,cb, cb_arg);
+	rc = spdk_bdev_write(desc, ch, buf, (item->address)*4096,block_cnt*4096,cb, cb_arg);
+    
 
-
-	//for(int k=0;k<cel;k++){
+	//for(int k=0;k<block_cnt;k++){
 	//	rc = spdk_bdev_write(desc, ch, buf+(4096*k), (item->address)*(4096+k),4096,cb, cb_arg);
 //	}
 	if(rc==0){
 		//printf("journal start\n");
 
-		//rc = spdk_bdev_write(desc,ch,buf,item->address*4096,cel*4096,cb,cb_arg);
+		//rc = spdk_bdev_write(desc,ch,buf,item->address*4096,block_cnt*4096,cb,cb_arg);
 		//bdev_journaling(desc,ch,buff,item->address*4096,512,cb,cb_arg);
 	}
 
@@ -4605,6 +4808,87 @@ bdev_add_translate(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 }
 
 
+/*
+make LAST point to NEW instead of OLD and 
+
+*/
+void
+link_versioned_data (struct _node * last, struct _node * new_data, struct _node * old_data, struct _node ** head)
+{
+	if (last == NULL){ // old_data is the first data of the hash table. 
+		*head = new_data; 
+		printf("asdf\n");
+	} 
+	else
+		last->next = new_data; // last->next was OLD_DATA
+
+	new_data->previous_version = old_data;
+	old_data->next_version = new_data;
+	new_data->next = old_data->next; 
+
+	new_data->version = old_data->version + 1;
+}
+
+
+struct version_node_context_t {
+	struct spdk_bdev_desc * desc; 
+	struct spdk_io_channel *ch; 
+	void * buf;
+	struct _node * node; 
+	int nbytes; 
+}; 
+
+
+struct node_context_t
+{
+	char * buf;
+	struct _node * node; 
+	struct spdk_bdev_desc * desc;
+	struct spdk_io_channel * ch; 
+	int nbytes;
+}; 
+
+
+void
+bdev_hash_find (struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, 
+				void *buf, int level1_entry, int level2_entry, int hash, spdk_bdev_io_completion_cb cb, void *cb_arg) 
+{
+	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc); 
+
+
+	char * versioned_data_buffer = spdk_zmalloc(4096, 0, NULL, SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA); 
+	if (versioned_data_buffer == NULL)
+		SPDK_ERRLOG("Memory allocation error\n"); 
+	
+	pthread_mutex_lock(&bdev->internal.mutex); 
+	struct _node * temp = bucket[level1_entry][level2_entry].head; 
+	while (temp != NULL)
+	{
+		if (temp->hash == hash)
+		{
+			// bdev_read_all_version (desc, ch, versioned_data_buffer, temp, nbytes, cb, cb_arg); 
+			
+			pthread_mutex_unlock(&bdev->internal.mutex); 
+			while (temp->previous_version != NULL)
+			{
+				printf("version%d/address:%d\n", temp->version, temp->address); 
+				temp = temp->previous_version; 
+			}
+			printf("\n"); 
+			
+			cb(cb_arg, true, cb_arg);
+			// cb(cb_arg, true, cb_arg); 
+
+			return; 
+		}
+		temp = temp->next;
+	}
+	pthread_mutex_unlock(&bdev->internal.mutex); 
+	cb(cb_arg, true, cb_arg); 
+	
+	return; 
+}
+
 
 
 /* Find and read value using key stored in OFFSET. */
@@ -4613,10 +4897,32 @@ bdev_add_search(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		void *buf, uint64_t offset, uint64_t nbytes,
 		spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
-	int bit = 0,t = 0,cel = 0, hash1 = 0, hashint, has, entry,ii=0;
+	int bit = 0,t = 0,block_cnt = 0, hash1 = 0, hashint, has, entry,ii=0;
 	uint64_t *pi;
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
 	hash1 = offset%1000;
+
+	char * versioned_data_buffer = spdk_zmalloc(4096, 0, NULL, SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA); 
+	
+	/*
+
+	char * versioned_data_buffer_vec[10] = {NULL}; 
+
+	for (int i = 0; i < 10; i ++)
+	{
+		
+		versioned_data_buffer_vec[i] = spdk_zmalloc(16, 0, NULL, SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA); 
+		if (versioned_data_buffer_vec[i] ) 
+	}
+
+
+	*/
+
+
+	if (versioned_data_buffer == NULL)
+	{
+		SPDK_ERRLOG("Memory Mallocation Error"); 
+	}
 
 	/************************** hash : SHA1******************************/
 	unsigned char digest[SHA_DIGEST_LENGTH];
@@ -4630,102 +4936,293 @@ bdev_add_search(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	}
 	pi = (int*)mdString;
 	/********************************************************************/
-	cel = nbytes/512+1;
+	block_cnt = nbytes/512+1;
 	hashint = *pi;
 	has = hashint & 15; 						/* 삽입될 버킷 선정용 모듈로 연산 */
 	entry = (hashint & 65520)/16;				/* 버킷 내에는 4096개의 슬롯이 있음. 그중 어디에다 넣을것인가를 지정.*/
 	//hash1 = (hashint & 4294901760)>>16;
 	hash1 = hashint;
 	//printf("hashint:%d,%x\n",hashint,hashint);
+	static int version_cnt = 0; 
 	
-	if(has==0 || has==5){
-		struct _node *tem = array_[entry].head;
-		pthread_mutex_lock(&bdev->internal.mutex); /* todo: per bucket data structure 로 바꿔보자.*/
-		while(tem!=NULL){
-			if(tem->hash==hash1){
-				pthread_mutex_unlock(&bdev->internal.mutex);
-				//printf("0,5READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
-				spdk_bdev_read(desc, ch, buf, tem->address*4096,cel*4096, cb, cb_arg);
-				return;
-			}
-			tem = tem->next;
-		}
-		pthread_mutex_unlock(&bdev->internal.mutex);
-		//printf("*******************0,5has no same hash*****************\n");
-		spdk_bdev_read(desc,ch,buf,0,cel*4096,cb,cb_arg);
-		return;
-	}	
-	else if(has==1 || has==6){
-		struct _node *tem = array1[entry].head;
-		pthread_mutex_lock(&bdev->internal.mutex);
-		while(tem!=NULL){
-			if(tem->hash==hash1){
-				pthread_mutex_unlock(&bdev->internal.mutex);
-				//printf("1,6READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
-				spdk_bdev_read(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-				return;
-			}
-			tem = tem->next;
-		}
-		pthread_mutex_unlock(&bdev->internal.mutex);
-		//printf("******************1,6has no same hash******************\n");
-		spdk_bdev_read(desc,ch,buf,0,cel*4096,cb,cb_arg);
-		return;
-	}
-	else if(has==2 || has==7){
-		struct _node *tem = array2[entry].head;
-		pthread_mutex_lock(&bdev->internal.mutex);
-		while(tem!=NULL){
-			//printf("2,7whileREAD-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
-			if(tem->hash==hash1){
-				pthread_mutex_unlock(&bdev->internal.mutex);
-				//printf("2,7READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
-				spdk_bdev_read(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-				return;
-			}
-			tem = tem->next;
-		}
-		pthread_mutex_unlock(&bdev->internal.mutex);
-		//printf("*****************2,7has no same has*******************h\n");
-		spdk_bdev_read(desc,ch,buf,0,cel*4096,cb,cb_arg);
-		return;
-	}
-	else if(has==3 || has==8){
-		struct _node *tem = array3[entry].head;
-		pthread_mutex_lock(&bdev->internal.mutex);
-		while(tem!=NULL){
-			if(tem->hash==hash1){
-				pthread_mutex_unlock(&bdev->internal.mutex);
-				//printf("3,8READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
-				spdk_bdev_read(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-				return;
-			}
-			tem = tem->next;
-		}
-		pthread_mutex_unlock(&bdev->internal.mutex);
-		//printf("***************3,8 has no same hash*******************\n");
-		spdk_bdev_read(desc,ch,buf,0,cel*4096,cb,cb_arg);
-		return;
-	}
-	else{
-		struct _node *tem = array4[entry].head;
-		pthread_mutex_lock(&bdev->internal.mutex);
-		while(tem!=NULL){
-			if(tem->hash==hash1){
-				pthread_mutex_unlock(&bdev->internal.mutex);
-				//printf("4,9READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
-				spdk_bdev_read(desc,ch,buf,tem->address*4096,cel*4096,cb,cb_arg);
-				return;
-			}
-			tem = tem->next;
-		}
-		pthread_mutex_unlock(&bdev->internal.mutex);
-		//printf("**************4,9has no same hash*****************8*\n");
-		spdk_bdev_read(desc,ch,buf,0,cel*4096,cb,cb_arg);
-		return;
-	}
+	printf("has: %d entry: %d\n", has, entry); 
+
+	puts("zxcv1"); 
+
+	struct version_node_context_t * version_node_context = (struct version_node_context_t *)spdk_malloc(sizeof(struct version_node_context_t), 0, NULL, SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA);
+       if (version_node_context == NULL)
+              SPDK_ERRLOG("Memory allocation error\n");  
+	version_node_context->desc = desc;
+	version_node_context->ch = ch; 
+	puts("zxcv2"); 
+
+	version_node_context->buf = versioned_data_buffer; 
+	version_node_context->nbytes = nbytes;
+
+
+	bdev_hash_find (desc, ch, versioned_data_buffer, has, entry, hash1, cb, cb_arg); 
 
 }
+// 	if(has==0 || has==5){
+// 		struct _node *tem = array_[entry].head;
+// 		pthread_mutex_lock(&bdev->internal.mutex); /* todo: per bucket data structure 로 바꿔보자.*/
+// 		printf("asdf");
+// 		while(tem!=NULL){
+// 			if(tem->hash==hash1){
+// 				pthread_mutex_unlock(&bdev->internal.mutex);
+// 				//printf("0,5READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
+// 				// spdk_bdev_read(desc, ch, buf, tem->address*4096,block_cnt*4096, cb, cb_arg);
+// 				printf("1234"); 
+// 				// while (tem->previous_version != NULL) 
+// 				// {	
+// 				// 	printf("version: %d\n", version_cnt++); 
+// 				// 	// spdk_bdev_read(desc, ch, buf, tem->address * 4096, block_cnt * 4096, cb, cb_arg); 
+// 				version_node_context->node = tem; 
+// 				// spdk_bdev_read(desc, ch, versioned_data_buffer, tem->address * 4096, block_cnt * 4096, bdev_read_next_version, version_node_context); 
+// 				// tem = tem->previous_version; 
+	
+// 				// }
+// 				// bdev_read_all_version(desc, ch, versioned_data_buffer, tem, nbytes, cb, cb_arg); 	
+	
+		
+// 				while(tem->previous_version != NULL)
+// 				{
+// 					printf("version%d/Address:%d\n", tem->version, tem->address); 
+// 					tem = tem->previous_version; 
+// 				}
+// 				printf("\n"); 
+
+
+				
+
+
+
+
+
+// 				return;
+// 			}
+// 			tem = tem->next;
+// 		}
+// 		pthread_mutex_unlock(&bdev->internal.mutex);
+// 		printf("*******************0,5has no same hash*****************\n");
+// 		spdk_bdev_read(desc,ch,buf,0,block_cnt*4096,cb,cb_arg);
+// 		return;
+// 	}	
+// 	else if(has==1 || has==6){
+// 		struct _node *tem = array1[entry].head;
+// 		pthread_mutex_lock(&bdev->internal.mutex);
+// 		printf("asdf");
+// 		while(tem!=NULL){
+// 			if(tem->hash==hash1){
+// 				pthread_mutex_unlock(&bdev->internal.mutex);
+// 				//printf("1,6READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
+// 				// spdk_bdev_read(desc,ch,buf,tem->address*4096,block_cnt*4096,cb,cb_arg);
+			
+// 				// while (tem->previous_version != NULL) 
+// 				// {	
+// 				// 	printf("version: %d\n", version_cnt++); 
+// 				// 	tem = tem->previous_version; 
+// 				// 	// spdk_bdev_read(desc, ch, buf, tem->address * 4096, block_cnt * 4096, cb, cb_arg); 
+// 				// 	spdk_bdev_read(desc, ch, versioned_data_buffer, tem->address * 4096, block_cnt * 4096, cb, cb_arg); 
+// 				version_node_context->node = tem; 
+// 				//spdk_bdev_read(desc, ch, versioned_data_buffer, tem->address * 4096, block_cnt * 4096, bdev_read_next_version, version_node_context); 
+		
+// 				while(tem->previous_version != NULL)
+// 				{
+// 					printf("version%d/Address:%d\n", tem->version, tem->address); 
+// 					tem = tem->previous_version; 
+// 				}
+// 				printf("\n"); 
+
+
+
+// 				// 	tem = tem->previous_version; 
+// 				// }				
+				
+// 				// bdev_read_all_version(desc, ch, versioned_data_buffer, tem, nbytes, cb, cb_arg); 	
+
+// 				return;
+// 			}
+// 			tem = tem->next;
+// 		}
+// 		pthread_mutex_unlock(&bdev->internal.mutex);
+// 		printf("******************1,6has no same hash******************\n");
+// 		spdk_bdev_read(desc,ch,buf,0,block_cnt*4096,cb,cb_arg);
+// 		return;
+// 	}
+// 	else if(has==2 || has==7){
+// 		puts("qwer"); 
+// 		struct _node *tem = array2[entry].head;
+// 		pthread_mutex_lock(&bdev->internal.mutex);
+// 		puts("asdf");
+// 		while(tem!=NULL){
+// 			puts("1\n"); 
+// 			//printf("2,7whileREAD-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
+// 			if(tem->hash==hash1){
+// 				pthread_mutex_unlock(&bdev->internal.mutex);
+// 				//printf("2,7READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
+// 				// spdk_bdev_read(desc,ch,buf,tem->address*4096,block_cnt*4096,cb,cb_arg);
+// 				// printf("1234"); 
+
+// 				// while (tem->previous_version != NULL) 
+// 				// {	
+// 				// 	printf("version: %d\n", version_cnt++); 
+// 				// 	// spdk_bdev_read(desc, ch, buf, tem->address * 4096, block_cnt * 4096, cb, cb_arg); 
+// 				// 	spdk_bdev_read(desc, ch, versioned_data_buffer, tem->address * 4096, block_cnt * 4096, cb, cb_arg); 
+// 				// 	tem = tem->previous_version; 
+// 				// }
+// 				version_node_context->node = tem;
+// //				spdk_bdev_read(desc, ch, versioned_data_buffer, tem->address * 4096, block_cnt * 4096, bdev_read_next_version, (void*)version_node_context); 
+				
+// 				while(tem->previous_version != NULL)
+// 				{
+// 					printf("version%d/Address:%d\n", tem->version, tem->address); 
+// 					tem = tem->previous_version; 
+// 				}
+// 				printf("\n"); 
+
+// 				return;
+// 			}
+// 			tem = tem->next;
+// 		}
+// 		pthread_mutex_unlock(&bdev->internal.mutex);
+// 		puts("*****************2,7has no same has*******************h\n");
+// 		spdk_bdev_read(desc,ch,buf,0,block_cnt*4096,cb,cb_arg);
+// 		return;
+// 	}
+// 	else if(has==3 || has==8){
+// 		struct _node *tem = array3[entry].head;
+// 		pthread_mutex_lock(&bdev->internal.mutex);
+// 		while(tem!=NULL){
+// 			if(tem->hash==hash1){
+// 			// 	pthread_mutex_unlock(&bdev->internal.mutex);
+// 			// 	//printf("3,8READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
+// 			// 	spdk_bdev_read(desc,ch,buf,tem->address*4096,block_cnt*4096,cb,cb_arg);
+// 			// 	while (tem->previous_version != NULL) 
+// 			// 	{	
+// 			// 		printf("version: %d\n", version_cnt++); 
+// 			// 		// spdk_bdev_read(desc, ch, buf, tem->address * 4096, block_cnt * 4096, cb, cb_arg); 
+// 			// 		spdk_bdev_read(desc, ch, versioned_data_buffer, tem->address * 4096, block_cnt * 4096, cb, cb_arg); 
+// 			// 		tem = tem->previous_version; 
+// 			// 	}
+// 				version_node_context->node = tem; 
+// 				// spdk_bdev_read(desc, ch, versioned_data_buffer, tem->address * 4096, block_cnt * 4096, bdev_read_next_version, version_node_context); 
+
+// 				while(tem->previous_version != NULL)
+// 				{
+// 					printf("version%d/Address:%d\n", tem->version, tem->address); 
+// 					tem = tem->previous_version; 
+// 				}
+// 				printf("\n"); 
+
+
+
+// 				// bdev_read_all_version(desc, ch, versioned_data_buffer, tem, nbytes, cb, cb_arg); 	
+
+// 				return;
+// 			}
+// 			tem = tem->next;
+// 		}
+// 		pthread_mutex_unlock(&bdev->internal.mutex);
+// 		printf("***************3,8 has no same hash*******************\n");
+// 		spdk_bdev_read(desc,ch,buf,0,block_cnt*4096,cb,cb_arg);
+// 		return;
+// 	}
+// 	else{
+// 		struct _node *tem = array4[entry].head;
+// 		pthread_mutex_lock(&bdev->internal.mutex);
+// 		while(tem!=NULL){
+// 			if(tem->hash==hash1){
+// 				pthread_mutex_unlock(&bdev->internal.mutex);
+// 				//printf("4,9READ-hashint:%X,has:%X,hash1:%X,address:%X\n",hashint,has,tem->hash,tem->address);
+// 				// spdk_bdev_read(desc,ch,buf,tem->address*4096,block_cnt*4096,cb,cb_arg);
+// 				// while (tem->previous_version != NULL) 
+// 				// {	
+// 				// 	printf("version: %d\n", version_cnt++); 
+// 				// 	// spdk_bdev_read(desc, ch, buf, tem->address * 4096, block_cnt * 4096, cb, cb_arg); 
+// 				// 	spdk_bdev_read(desc, ch, versioned_data_buffer, tem->address * 4096, block_cnt * 4096, cb, cb_arg); 
+// 				// 	tem = tem->previous_version; 
+	
+// 				// }				
+// 				version_node_context->node = tem; 
+// 				// spdk_bdev_read(desc, ch, versioned_data_buffer, tem->address * 4096, block_cnt * 4096, bdev_read_next_version, version_node_context); 
+// 				while(tem->previous_version != NULL)
+// 				{
+// 					printf("version%d/Address:%d\n", tem->version, tem->address); 
+// 					tem = tem->previous_version; 
+// 				}
+// 				printf("\n"); 
+
+
+
+// 				// bdev_read_all_version(desc, ch, versioned_data_buffer, tem, nbytes, cb, cb_arg); 	
+
+// 				return;
+// 			}
+// 			tem = tem->next;
+// 		}
+// 		pthread_mutex_unlock(&bdev->internal.mutex);
+// 		printf("**************4,9has no same hash*****************8*\n");
+// 		spdk_bdev_read(desc,ch,buf,0,block_cnt*4096,cb,cb_arg);
+// 		return;
+// 	}
+
+// }
+
+
+
+void
+bdev_read_all_version (struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, 
+		void *buf, struct _node * node, uint64_t nbytes, spdk_bdev_io_completion_cb cb, void *cb_arg)
+{
+	
+	int block_cnt = nbytes / 512 + 1; 
+	struct spdk_io_channel * channel = spdk_bdev_get_io_channel(desc);  
+	printf("1234\n"); 
+
+	struct node_context_t node_context = {buf, node, desc, channel, nbytes}; 
+	spdk_bdev_read(desc, channel, buf, node->address * 4096, block_cnt * 4096, cb, cb_arg); 
+	// spdk_bdev_read(desc, channel, buf, node->address * 4096, block_cnt * 4096, bdev_read_next_version, (void *)&node_context); 
+	// spdk_bdev_read(desc, ch, buf, node->address * 4096, block_cnt * 4096, bdev_read_next_version, (void *)&node_context); 
+	
+}
+
+void
+bdev_read_next_version (struct spdk_bdev_io *bdev_io, bool success, void * cb_arg)
+{
+	char * data;
+	struct _node *node; 
+	struct version_node_context_t * node_context; 
+	struct spdk_bdev_desc * desc; 
+	struct spdk_io_channel * ch;
+	int nbytes, block_cnt; 
+    int status = success? SPDK_BDEV_IO_STATUS_SUCCESS: SPDK_BDEV_IO_STATUS_FAILED; 
+
+	node_context = (struct version_node_context_t *)cb_arg;
+	data = node_context->buf;
+	node = node_context->node;
+	//int hash = node_context->node->hash; 
+	//printf("hash: %d", hash); 
+	desc = node_context->desc;
+	ch = node_context->ch; 
+	block_cnt = node_context->nbytes / 512 + 1; 
+        
+	printf("%dth version: %.*s\n", node_context->node->version, 16, data); 
+
+	//printf("hash: %d\n", (int)node_context->node->hash); 
+
+	if (node->previous_version == NULL)
+	{
+		spdk_free (data); 
+        //      spdk_bdev_io_complete(bdev_io, status); 
+	//	spdk_bdev_free_io(bdev_io); 
+		return; 
+	}
+	node_context->node = node->previous_version; 
+	spdk_bdev_read(desc, ch, data, node->previous_version->address * 4096, block_cnt * 4096, bdev_read_next_version, (void *)node_context); 
+}
+
+
 
 int
 bdev_chunk(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,

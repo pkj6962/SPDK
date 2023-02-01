@@ -16,6 +16,7 @@ sudo HUGEMEM="$EXTERNAL_MAKE_HUGEMEM" $SPDK_DIR/scripts/setup.sh
 
 make -C $SPDK_DIR clean
 $SPDK_DIR/configure --with-shared --without-isal --without-ocf --disable-asan
+# $SPDK_DIR/configure --with-shared 
 make -C $SPDK_DIR -j$(nproc)
 
 export SPDK_HEADER_DIR="$SPDK_DIR/include"

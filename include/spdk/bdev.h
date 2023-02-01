@@ -947,14 +947,32 @@ int bdev_indexsearch(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		    void *buf, uint64_t offset, uint64_t nbytes,
 		    spdk_bdev_io_completion_cb cb, void *cb_arg, char *mdString);
 
+struct _node; 
+
+void 
+link_versioned_data (struct _node * last, struct _node * new_data, struct _node * old_data, struct _node ** head); 
 
 
-// int bdev_hash_insert(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, 
-// 				void *buf, struct _node * item, int level1_entry, int level2_entry, int cel, 
-// 				spdk_bdev_io_completion_cb cb, void *cb_arg); 
+void 
+bdev_read_all_version (struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, 
+		void *buf, struct _node * node, uint64_t nbytes, spdk_bdev_io_completion_cb cb, void *cb_arg); 
+
+void 
+bdev_read_next_version (struct spdk_bdev_io *bdv_io, bool success, void * cb_arg);  
 
 
+int 
+bdev_hash_insert(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, 
+				void *buf, struct _node * item, int level1_entry, int level2_entry, int cel, 
+				spdk_bdev_io_completion_cb cb, void *cb_arg); 
 
+void
+bdev_hash_find (struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, 
+				void *buf, int level1_entry, int level2_entry, int hash, spdk_bdev_io_completion_cb cb, void *cb_arg); 
+				
+int calc_hash_value(int key); 
+void bucket_lock_init (void); 
+void init_item (struct _node * item, int hash); 
 
 /**
  * Submit a write request to the bdev on the given channel.

@@ -23,6 +23,10 @@
 	spdk_bit_array_load_mask;
 	spdk_bit_array_clear_mask;
 
+	spdk_bit_array_find_consecutive_clear;
+	spdk_bit_array_consecutive_clear; 
+	spdk_bit_array_consecutive_set; 
+
 	# public functions in bit_pool.h
 	spdk_bit_pool_capacity;
 	spdk_bit_pool_create;
